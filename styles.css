@@ -5,6 +5,7 @@
   --muted: #aeb8d6;
   --line: #2a3156;
   --accent: #7aa2ff;
+  --danger: #ff6b6b;
   --radius: 12px;
 }
 
@@ -71,6 +72,13 @@ body {
   gap: 5px;
 }
 
+.slot-label {
+  font-size: 0.85rem;
+  color: var(--accent);
+  margin-bottom: 4px;
+  font-weight: bold;
+}
+
 .slot select, .slot input, textarea {
   background: #09101e;
   color: #fff;
@@ -79,7 +87,6 @@ body {
   border-radius: 4px;
 }
 
-/* エディタの縦並びスタイル */
 .editor-group {
   margin-bottom: 20px;
   display: flex;
