@@ -9,24 +9,20 @@
 <body>
   <header class="topbar">
     <div class="header-title">
-      <h1>時空戦記 Advanced Universal Engine</h1>
+      <h1>時空戦記 Universal Engine</h1>
       <div class="sub">データ駆動型スキル・英傑システム（完全版）</div>
     </div>
-    <div class="top-actions">
-      <button id="btnLoadDefault">初期化</button>
-      <button id="btnSaveAll">すべて保存</button>
+    <div class="log-nav">
+      <button id="btnPrevTurn">◀︎</button>
+      <span id="currentTurnLabel">Turn 0</span>
+      <button id="btnNextTurn">▶︎</button>
     </div>
   </header>
 
-  <main class="grid-layout">
+  <main class="main-layout">
     <section class="panel log-panel">
       <div class="panel-head">
         <h2>戦闘ログ</h2>
-        <div class="log-nav">
-          <button id="btnPrevTurn">◀︎</button>
-          <span id="currentTurnLabel">Turn 0</span>
-          <button id="btnNextTurn">▶︎</button>
-        </div>
         <div class="row">
           <button id="btnCopyLog">コピー</button>
           <button id="btnClearLog" class="danger">消去</button>
@@ -43,65 +39,65 @@
         <span id="phaseBadge">Phase: -</span>
         <span id="stateBadge">待機中</span>
       </div>
-      <div id="logArea" class="log-area"><pre id="log">準備完了。</pre></div>
+      <div id="logArea" class="log-area">
+        <div id="logContent">準備完了。戦闘開始を押してください。</div>
+      </div>
     </section>
 
-    <div class="right-column">
-      <section class="panel formation-panel">
-        <div class="panel-head">
-          <h2>軍団編成</h2>
-          <button id="btnRefresh">反映</button>
-        </div>
-        <div class="two-col">
-          <div>
-            <h3 class="team-label team-left">自軍 (Left)</h3>
-            <div id="leftSlots" class="slots"></div>
-          </div>
-          <div>
-            <h3 class="team-label team-right">敵軍 (Right)</h3>
-            <div id="rightSlots" class="slots"></div>
-          </div>
-        </div>
-      </section>
+    <section class="panel formation-panel">
+      <div class="panel-head">
+        <h2>軍団編成</h2>
+        <button id="btnRefresh">反映してリセット</button>
+      </div>
+      <div class="team-section">
+        <h3 class="team-label team-left">自軍 (Left)</h3>
+        <div id="leftSlots" class="slots"></div>
+      </div>
+      <div class="team-section">
+        <h3 class="team-label team-right">敵軍 (Right)</h3>
+        <div id="rightSlots" class="slots"></div>
+      </div>
+    </section>
 
-      <section class="panel viewer-panel">
-        <div class="panel-head">
-          <h2>英傑・スキル確認</h2>
+    <section class="panel viewer-panel">
+      <div class="panel-head">
+        <h2>英傑・スキル確認ビューア</h2>
+      </div>
+      <div class="viewer-layout">
+        <div class="viewer-section">
+          <h3>英傑データ</h3>
+          <select id="heroViewerSelect"><option value="">英傑を選択</option></select>
+          <div id="heroViewerDetail" class="detail-box">英傑を選択してください。</div>
         </div>
-        <div class="viewer-layout">
-          <div class="viewer-section">
-            <h3>英傑ビュー</h3>
-            <select id="heroViewerSelect">
-              <option value="">英傑を選択</option>
-            </select>
-            <div id="heroViewerDetail" class="detail-box">英傑を選択してください。</div>
-          </div>
-          <div class="viewer-section">
-            <h3>スキルビュー</h3>
-            <select id="skillViewerSelect">
-              <option value="">スキルを選択</option>
-            </select>
-            <div id="skillViewerDetail" class="detail-box">スキルを選択してください。</div>
-          </div>
+        <div class="viewer-section">
+          <h3>スキルデータ</h3>
+          <select id="skillViewerSelect"><option value="">スキルを選択</option></select>
+          <div id="skillViewerDetail" class="detail-box">スキルを選択してください。</div>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section class="panel editor-panel">
-        <div class="panel-head">
-          <h2>英傑JSON</h2>
-          <button id="btnSaveHeroes">英傑保存</button>
+    <section class="panel editor-panel">
+      <div class="panel-head">
+        <h2>英傑JSONデータ</h2>
+        <div class="row">
+          <button id="btnLoadDefaultHeroes">初期化</button>
+          <button id="btnSaveHeroes" class="primary">英傑保存</button>
         </div>
-        <textarea id="heroesJson" spellcheck="false" placeholder="英傑データをここに入力"></textarea>
-      </section>
+      </div>
+      <textarea id="heroesJson" spellcheck="false" placeholder="英傑データをここに入力"></textarea>
+    </section>
 
-      <section class="panel editor-panel">
-        <div class="panel-head">
-          <h2>スキルJSON</h2>
-          <button id="btnSaveSkills">スキル保存</button>
+    <section class="panel editor-panel">
+      <div class="panel-head">
+        <h2>スキルJSONデータ</h2>
+        <div class="row">
+          <button id="btnLoadDefaultSkills">初期化</button>
+          <button id="btnSaveSkills" class="primary">スキル保存</button>
         </div>
-        <textarea id="skillsJson" spellcheck="false" placeholder="スキルデータをここに入力"></textarea>
-      </section>
-    </div>
+      </div>
+      <textarea id="skillsJson" spellcheck="false" placeholder="スキルデータをここに入力"></textarea>
+    </section>
   </main>
 
   <script src="app.js"></script>
