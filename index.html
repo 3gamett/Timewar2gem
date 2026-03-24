@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>時空戦記 Universal Engine (Mobile)</title>
+  <title>時空戦記 Universal Engine (Expanded)</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
     <div class="header-title">
       <h1>時空戦記</h1>
-      <div class="sub">Universal Engine Mobile</div>
+      <div class="sub">Advanced Universal Engine</div>
     </div>
     <div class="log-nav">
       <button id="btnPrevTurn">◀︎</button>
@@ -39,33 +39,29 @@
         <span id="phaseBadge">-</span>
         <span id="stateBadge">待機中</span>
       </div>
-      <div id="logArea" class="log-area"><div id="logContent"></div></div>
+      <div id="logArea" class="log-area"><div id="logContent">準備完了。</div></div>
     </section>
 
     <section class="panel formation-panel">
       <div class="panel-head">
         <h2>軍団編成</h2>
-        <button id="btnSyncFile">ファイル同期</button>
+        <button id="btnSyncFile">ファイルから同期</button>
       </div>
-      <div class="team-section">
-        <h3 class="team-label team-left">自軍 (Left)</h3>
-        <div id="leftSlots" class="slots"></div>
-      </div>
-      <div class="team-section">
-        <h3 class="team-label team-right">敵軍 (Right)</h3>
-        <div id="rightSlots" class="slots"></div>
-      </div>
+      
+      <h3 class="team-label team-left">自軍 (Left)</h3>
+      <div id="leftSlots" class="slots"></div>
+
+      <h3 class="team-label team-right" style="margin-top:20px;">敵軍 (Right)</h3>
+      <div id="rightSlots" class="slots"></div>
     </section>
 
     <section class="panel viewer-panel">
       <div class="panel-head"><h2>データ確認</h2></div>
-      <div class="viewer-section">
+      <div class="viewer-layout">
         <select id="heroViewerSelect"></select>
-        <div id="heroViewerDetail" class="detail-box"></div>
-      </div>
-      <div class="viewer-section" style="margin-top:10px;">
-        <select id="skillViewerSelect"></select>
-        <div id="skillViewerDetail" class="detail-box"></div>
+        <div id="heroViewerDetail" class="detail-box">英傑詳細</div>
+        <select id="skillViewerSelect" style="margin-top:10px;"></select>
+        <div id="skillViewerDetail" class="detail-box">スキル詳細</div>
       </div>
     </section>
 

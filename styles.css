@@ -3,12 +3,8 @@
   --accent: #70a2ff; --danger: #ff5252; --good: #66bb6a; --skill: #ffca28;
 }
 * { box-sizing: border-box; }
-body { 
-  margin: 0; background: var(--bg); color: var(--text); 
-  font-family: "Hiragino Sans", "Noto Sans JP", sans-serif; 
-}
+body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-serif; }
 
-/* ヘッダー */
 .topbar { 
   display: flex; align-items: center; justify-content: space-between; 
   padding: 10px; background: rgba(15,20,40,.98); border-bottom: 1px solid var(--line); 
@@ -16,57 +12,56 @@ body {
 }
 .header-title h1 { margin: 0; font-size: 1rem; }
 .header-title .sub { color: #a9b4d5; font-size: 0.7rem; }
-.log-nav { display: flex; align-items: center; gap: 8px; background: #09101e; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--line); }
-.log-nav button { background: transparent; border: none; font-size: 1rem; color: #fff; cursor: pointer; }
-#currentTurnLabel { font-size: 0.8rem; min-width: 50px; text-align: center; }
 
-/* 1カラムレイアウト */
-.main-layout { 
-  display: flex; flex-direction: column; gap: 15px; padding: 10px; max-width: 600px; margin: 0 auto;
-}
+.main-layout { display: flex; flex-direction: column; gap: 20px; padding: 10px; max-width: 800px; margin: 0 auto; }
 
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 15px; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-h2 { margin: 0; font-size: 0.9rem; }
-h3 { margin: 0 0 8px; font-size: 0.85rem; }
 
-/* 戦闘ログ (スマホで見やすいよう高さを制限) */
-.log-panel { height: 450px; }
+/* 戦闘ログの拡大設定 */
+.log-panel { height: 600px; display: flex; flex-direction: column; }
 .log-area { 
-  flex-grow: 1; overflow-y: auto; background: #090e1a; border-radius: 6px; padding: 10px;
-  font-size: 0.8rem; line-height: 1.5; font-family: monospace; border: 1px solid #1a223f;
+  flex-grow: 1; overflow-y: auto; background: #090e1a; border-radius: 8px; padding: 12px;
+  font-size: 0.85rem; line-height: 1.6; border: 1px solid #1a223f; color: #d0d7de;
 }
-.log-entry { border-bottom: 1px solid rgba(255,255,255,0.05); padding: 2px 0; }
-.log-skill { color: var(--skill); }
+
+.log-skill { color: var(--skill); font-weight: bold; }
 .log-damage { color: var(--danger); font-weight: bold; }
-.log-heal { color: var(--good); }
+.log-heal { color: var(--good); font-weight: bold; }
 
-/* ボタンとステータス */
-.battle-control-row { display: flex; gap: 5px; margin-bottom: 8px; }
-button { background: #1c2341; color: #fff; border: 1px solid var(--line); padding: 8px; border-radius: 6px; cursor: pointer; flex: 1; font-size: 0.75rem; }
-button.primary { background: var(--accent); border: none; }
-button.danger { color: var(--danger); }
-.status-bar { display: flex; gap: 8px; margin-bottom: 8px; font-size: 0.75rem; }
-.status-bar span { background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 10px; }
-
-/* スロット */
-.slots { display: flex; flex-direction: column; gap: 10px; }
-.slot { background: rgba(255,255,255,0.02); padding: 10px; border-radius: 8px; border: 1px solid var(--line); }
-.select-trigger { 
-  background: #0b1020; border: 1px dashed var(--accent); color: var(--accent); padding: 10px; 
-  text-align: center; border-radius: 6px; cursor: pointer; font-size: 0.85rem; 
+/* スロットの入力欄デザイン */
+.slots { display: flex; flex-direction: column; gap: 12px; }
+.slot { 
+  background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; 
+  border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px;
 }
-.select-trigger.has-hero { border-style: solid; color: #fff; background: #1c2541; }
+.slot label { font-size: 0.8rem; color: var(--accent); font-weight: bold; }
+.select-trigger { 
+  background: #0b1020; border: 1px dashed var(--accent); color: var(--accent); 
+  padding: 10px; text-align: center; border-radius: 6px; cursor: pointer;
+}
+.select-trigger.has-hero { border-style: solid; background: #1c2541; color: #fff; font-weight: bold; }
 
-select, input, textarea { background: #0b1020; color: #fff; border: 1px solid var(--line); padding: 8px; border-radius: 6px; width: 100%; font-size: 0.8rem; }
-textarea { height: 150px; }
+.input-group { display: flex; flex-direction: column; gap: 5px; }
+.input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+
+select, input, textarea { 
+  background: #0b1020; color: #fff; border: 1px solid var(--line); 
+  padding: 8px; border-radius: 6px; font-size: 0.85rem; width: 100%;
+}
+textarea { height: 150px; font-family: monospace; }
+
+/* ボタン */
+.battle-control-row { display: flex; gap: 5px; margin-bottom: 10px; }
+button { background: #1c2341; color: #fff; border: 1px solid var(--line); padding: 10px; border-radius: 6px; cursor: pointer; flex: 1; }
+button.primary { background: linear-gradient(to bottom, #4a7dff, #2e5bc7); border: none; font-weight: bold; }
 
 /* モーダル */
-.modal { display: none; position: fixed; z-index: 200; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); }
-.modal-content { background: #151a2c; margin: 10% auto; padding: 15px; width: 90%; max-height: 80%; overflow-y: auto; border-radius: 10px; }
-.hero-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.hero-card { background: #1c2341; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid var(--line); }
+.modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); }
+.modal-content { background: #151a2c; margin: 15% auto; padding: 20px; width: 90%; max-width: 500px; border-radius: 12px; max-height: 70vh; overflow-y: auto; }
+.hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hero-item { background: #1c2341; padding: 10px; text-align: center; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); }
 
-.team-left { color: var(--good); }
-.team-right { color: var(--danger); }
-.detail-box { background: #090e1a; padding: 10px; border-radius: 6px; font-size: 0.8rem; white-space: pre-wrap; }
+.team-left { color: var(--good); border-bottom: 1px solid var(--good); padding-bottom: 5px;}
+.team-right { color: var(--danger); border-bottom: 1px solid var(--danger); padding-bottom: 5px;}
+.detail-box { background: #090e1a; padding: 10px; border-radius: 8px; font-size: 0.85rem; min-height: 80px; }
