@@ -1,94 +1,40 @@
+/* 既存のスタイルに以下を追加・修正 */
 :root { 
-  --bg: #0b1020; --panel: #151a2c; --line: #293154; 
-  --text: #eef3ff; --muted: #a9b4d5; --accent: #70a2ff; 
-  --danger: #ff5252; --good: #66bb6a; --skill: #ffca28;
+  --bg: #0b1020; --panel: #151a2c; --line: #293154; --text: #eef3ff;
+  --accent: #70a2ff; --danger: #ff5252; --good: #66bb6a;
 }
-* { box-sizing: border-box; }
-body { 
-  margin: 0; background: var(--bg); color: var(--text); 
-  font-family: "Hiragino Sans", "Noto Sans JP", sans-serif; 
+.main-layout { max-width: 900px; margin: 0 auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+.panel { background: #151a2c; border: 1px solid var(--line); border-radius: 12px; padding: 15px; }
+
+/* モーダル基本設定 */
+.modal {
+  display: none; position: fixed; z-index: 1000; left: 0; top: 0;
+  width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px);
 }
-
-/* ヘッダー */
-.topbar { 
-  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
-  padding: 10px 20px; background: rgba(15,20,40,.95); border-bottom: 1px solid var(--line); 
-  position: sticky; top: 0; z-index: 100; backdrop-filter: blur(5px); 
+.modal-content {
+  background: #1a223f; margin: 5% auto; padding: 20px; border-radius: 15px;
+  width: 90%; max-width: 800px; height: 80vh; overflow-y: auto; border: 1px solid var(--accent);
 }
-.header-title h1 { margin: 0; font-size: 1.2rem; }
-.header-title .sub { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
-.log-nav { display: flex; align-items: center; gap: 8px; background: #09101e; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line); }
-.log-nav button { background: transparent; border: none; font-size: 1.1rem; padding: 0; color: var(--text); cursor: pointer; }
-#currentTurnLabel { font-weight: bold; width: 60px; text-align: center; font-size: 0.9rem; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
 
-/* 1カラムメインレイアウト */
-.main-layout { 
-  display: flex; flex-direction: column; gap: 20px; 
-  max-width: 900px; margin: 0 auto; padding: 20px 10px; 
+/* 英傑カードグリッド */
+.hero-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px;
 }
-
-/* パネル共通 */
-.panel { 
-  background: linear-gradient(180deg, var(--panel), #10162a); 
-  border: 1px solid var(--line); border-radius: 12px; padding: 15px; 
-  box-shadow: 0 4px 15px rgba(0,0,0,.3); 
+.hero-card {
+  background: #252e4d; border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+  text-align: center; cursor: pointer; transition: transform 0.2s, border-color 0.2s;
 }
-.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
-h2 { margin: 0; font-size: 1.1rem; }
-h3 { margin: 0 0 10px 0; font-size: 1rem; color: var(--accent); }
+.hero-card:hover { transform: translateY(-5px); border-color: var(--accent); background: #2d3961; }
+.hero-card h4 { margin: 8px 0 4px; font-size: 1rem; color: #fff; }
+.hero-card p { margin: 0; font-size: 0.75rem; color: var(--muted); }
 
-/* ボタン類 */
-.row { display: flex; gap: 8px; flex-wrap: wrap; }
-.battle-control-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-button { border: 1px solid var(--line); background: #1c2341; color: var(--text); border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: 0.9rem; transition: background .2s; }
-button:hover { background: #29325a; }
-button.primary { background: linear-gradient(180deg, #355fdf, #2746a8); border: none; font-weight: bold; }
-button.primary:hover { background: linear-gradient(180deg, #466eeb, #3157ca); }
-button.danger { color: #fff; background: linear-gradient(180deg, #8b2e43, #631d2a); border: none;}
-
-/* ステータスバッジ */
-.status-bar { border-top: 1px solid var(--line); padding-top: 10px; }
-.status-bar span { padding: 4px 12px; border-radius: 20px; background: rgba(255,255,255,.05); font-size: 0.85rem; border: 1px solid rgba(255,255,255,.1); }
-
-/* 戦闘ログエリア (リッチテキスト対応) */
-.log-panel { height: 500px; display: flex; flex-direction: column; }
-.log-area { 
-  flex-grow: 1; overflow-y: auto; background: #090e1a; 
-  border: 1px solid #1a223f; border-radius: 8px; padding: 12px; 
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; 
-  font-size: 0.9rem; line-height: 1.6; color: #d0d7de; 
+/* スロット内の選択ボタン */
+.select-trigger {
+  width: 100%; padding: 10px; background: #0b1020; border: 1px dashed var(--accent);
+  color: var(--accent); border-radius: 8px; cursor: pointer; text-align: center;
 }
-.log-entry { margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 4px; }
-.log-skill { color: var(--skill); font-weight: bold; }
-.log-damage { color: var(--danger); font-weight: bold; }
-.log-heal { color: var(--good); font-weight: bold; }
-.log-turn-start { color: var(--accent); font-weight: bold; font-size: 1.05rem; margin-top: 10px; border-bottom: 1px solid var(--accent); padding-bottom: 2px;}
+.select-trigger.has-hero { border-style: solid; background: #1c2541; color: #fff; }
 
-/* 編成スロット */
-.team-section { margin-bottom: 20px; }
-.team-label.team-left { color: var(--good); border-bottom: 2px solid var(--good); padding-bottom: 4px; }
-.team-label.team-right { color: var(--danger); border-bottom: 2px solid var(--danger); padding-bottom: 4px; }
 .slots { display: flex; flex-direction: column; gap: 10px; }
-.slot { 
-  background: rgba(255,255,255,.03); padding: 12px; border-radius: 8px; 
-  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-  border: 1px solid rgba(255,255,255,.05); 
-}
-.slot .label { font-size: 0.85rem; color: var(--accent); font-weight: bold; width: 60px;}
-select, input, textarea { 
-  background: #09101e; color: #fff; border: 1px solid var(--line); 
-  padding: 8px; border-radius: 6px; font-size: 0.9rem; flex-grow: 1; min-width: 120px;
-}
-textarea { min-height: 200px; font-family: monospace; resize: vertical; width: 100%;}
-
-/* ビューア */
-.viewer-layout { display: flex; flex-direction: column; gap: 15px; }
-.detail-box { 
-  background: #090e1a; border: 1px solid var(--line); border-radius: 8px; 
-  padding: 12px; min-height: 100px; font-size: 0.9rem; line-height: 1.6; 
-  color: var(--muted); white-space: pre-wrap; 
-}
-
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.slot { background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px; border: 1px solid var(--line); }

@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>時空戦記 Advanced Universal Engine</title>
+  <title>時空戦記 Universal Engine</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
     <div class="header-title">
       <h1>時空戦記 Universal Engine</h1>
-      <div class="sub">データ駆動型スキル・英傑システム（完全版）</div>
+      <div class="sub">GitHub Data Sync Edition</div>
     </div>
     <div class="log-nav">
       <button id="btnPrevTurn">◀︎</button>
@@ -34,20 +34,13 @@
         <button id="btnAuto">オート</button>
         <button id="btnStop">停止</button>
       </div>
-      <div class="battle-control-row status-bar">
-        <span id="turnBadge">Turn 0</span>
-        <span id="phaseBadge">Phase: -</span>
-        <span id="stateBadge">待機中</span>
-      </div>
-      <div id="logArea" class="log-area">
-        <div id="logContent">準備完了。戦闘開始を押してください。</div>
-      </div>
+      <div id="logArea" class="log-area"><div id="logContent"></div></div>
     </section>
 
     <section class="panel formation-panel">
       <div class="panel-head">
         <h2>軍団編成</h2>
-        <button id="btnRefresh">反映してリセット</button>
+        <button id="btnSyncFile">ファイルから最新を同期</button>
       </div>
       <div class="team-section">
         <h3 class="team-label team-left">自軍 (Left)</h3>
@@ -60,45 +53,40 @@
     </section>
 
     <section class="panel viewer-panel">
-      <div class="panel-head">
-        <h2>英傑・スキル確認ビューア</h2>
-      </div>
+      <div class="panel-head"><h2>英傑・スキルビューア</h2></div>
       <div class="viewer-layout">
         <div class="viewer-section">
-          <h3>英傑データ</h3>
-          <select id="heroViewerSelect"><option value="">英傑を選択</option></select>
-          <div id="heroViewerDetail" class="detail-box">英傑を選択してください。</div>
+          <h3>英傑選択</h3>
+          <select id="heroViewerSelect"></select>
+          <div id="heroViewerDetail" class="detail-box"></div>
         </div>
         <div class="viewer-section">
-          <h3>スキルデータ</h3>
-          <select id="skillViewerSelect"><option value="">スキルを選択</option></select>
-          <div id="skillViewerDetail" class="detail-box">スキルを選択してください。</div>
+          <h3>スキル選択</h3>
+          <select id="skillViewerSelect"></select>
+          <div id="skillViewerDetail" class="detail-box"></div>
         </div>
       </div>
     </section>
 
     <section class="panel editor-panel">
-      <div class="panel-head">
-        <h2>英傑JSONデータ</h2>
-        <div class="row">
-          <button id="btnLoadDefaultHeroes">ファイルから同期</button>
-          <button id="btnSaveHeroes" class="primary">英傑保存</button>
-        </div>
-      </div>
-      <textarea id="heroesJson" spellcheck="false" placeholder="英傑データをここに入力"></textarea>
+      <div class="panel-head"><h2>英傑JSON</h2><button id="btnSaveHeroes">保存</button></div>
+      <textarea id="heroesJson"></textarea>
     </section>
-
     <section class="panel editor-panel">
-      <div class="panel-head">
-        <h2>スキルJSONデータ</h2>
-        <div class="row">
-          <button id="btnLoadDefaultSkills">ファイルから同期</button>
-          <button id="btnSaveSkills" class="primary">スキル保存</button>
-        </div>
-      </div>
-      <textarea id="skillsJson" spellcheck="false" placeholder="スキルデータをここに入力"></textarea>
+      <div class="panel-head"><h2>スキルJSON</h2><button id="btnSaveSkills">保存</button></div>
+      <textarea id="skillsJson"></textarea>
     </section>
   </main>
+
+  <div id="heroModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>英傑を選択してください</h2>
+        <button class="close-btn" onclick="closeHeroModal()">&times;</button>
+      </div>
+      <div id="heroGrid" class="hero-grid"></div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
