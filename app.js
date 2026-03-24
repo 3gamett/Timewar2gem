@@ -1,11 +1,19 @@
-const STORE = { heroes: 'tw.uni.heroes.v11', skills: 'tw.uni.skills.v11', teams: 'tw.uni.teams.v11' };
-
-let app = { 
-    heroes: [], skills: [], teams: null, battle: null, 
-    autoInterval: null, currentSelectingSlot: null 
+const STORE = { 
+    heroes: 'tw.uni.heroes.v12', 
+    skills: 'tw.uni.skills.v12', 
+    teams: 'tw.uni.teams.v12' 
 };
 
-// --- Unitクラス (ステータス・増幅計算の修正) ---
+let app = { 
+    heroes: [], 
+    skills: [], 
+    teams: null, 
+    battle: null, 
+    autoInterval: null, 
+    currentSelectingSlot: null 
+};
+
+// --- Unitクラス (属性増幅と詳細ステータス取得) ---
 class Unit {
     constructor(heroData, teamData, side, posIdx) {
         this.uid = `${side}_${posIdx}`;
@@ -26,20 +34,20 @@ class Unit {
 
     isAlive() { return this.hp > 0; }
 
-    // Rule 15: 属性値の増幅 (50ごとに10%アップ)
+    // 属性値の増幅計算 (Rule 15)
     getScaledStat(statName) {
         let base = Number(this.baseStats[statName]) || 0;
         let flatMod = this.buffs.filter(b => b.stat === statName).reduce((sum, b) => sum + b.value, 0);
         let val = base + flatMod;
-        // 計算式：元の値 ＋（元の値 × 10% ×（ステータス / 50））
+        // ステータス50ごとに10%増加
         let multiplier = 1 + (val / 50) * 0.1;
-        return { value: val, multiplier: multiplier };
+        return { value: Math.round(val), multiplier: multiplier };
     }
 
     getCurrentStat(statName) { return this.getScaledStat(statName).value; }
 }
 
-// --- 戦闘エンジン (ログ出力とスキル連動の修正) ---
+// --- 戦闘エンジン (詳細ログとスキル.txt対応) ---
 class BattleEngine {
     constructor(teams) {
         this.turn = 0; this.viewTurn = 0; this.phase = 'opening';
@@ -63,18 +71,15 @@ class BattleEngine {
         if (this.viewTurn === this.turn) addHtmlLog(msg);
     }
 
-    // スキル.txt の構造に合わせたスキル登録
     registerAllSkills() {
         this.units.forEach(u => {
             const skillIds = [u.uniqueSkillId, ...u.subSkillIds].filter(Boolean);
             skillIds.forEach(id => {
                 const s = app.skills.find(x => x.id === id);
                 if (!s) return;
-                // パッシブ・エンゲージの即時発動
                 if (s.trigger === 'passive' || s.trigger === 'engage') {
                     this.executeEffects(u, s.effects, { skillName: s.name });
                 }
-                // register_hook タイプの登録 (リンカーン等)
                 if (s.effects) {
                     s.effects.forEach(eff => {
                         if (eff.type === 'register_hook') {
@@ -117,7 +122,7 @@ class BattleEngine {
                 this.unitAction(this.turnOrder[this.turnIdx++]);
             } else {
                 this.turn++; this.viewTurn = this.turn; this.phase = 'action_start';
-                if (this.turn > 8) this.finish("8ターン経過");
+                if (this.turn > 8) this.finish("8ターン経過による引き分け");
             }
         }
         updateStatusDisplay();
@@ -126,10 +131,9 @@ class BattleEngine {
     unitAction(u) {
         if (!u.isAlive()) return;
         const s = { atk: u.getCurrentStat('atk'), def: u.getCurrentStat('def'), int: u.getCurrentStat('int'), agi: u.getCurrentStat('agi') };
-        // 要望：兵力、負傷兵、ステータスをログに明示
+        // 詳細な兵力とステータスの表示
         this.log(`▼ [行動] ${u.side==='left'?'自':'敵'}<b>${u.name}</b> 兵力:${Math.round(u.hp)}(負傷:${Math.round(u.maxHp-u.hp)}) [A:${s.atk} D:${s.def} I:${s.int} S:${s.agi}]`);
 
-        // アクティブスキル
         const actives = [u.uniqueSkillId, ...u.subSkillIds].map(id => app.skills.find(x => x.id === id)).filter(x => x && (x.trigger === 'active' || x.trigger === 'action'));
         actives.forEach(skill => {
             this.emit('onSkillAttempt', { actor: u, skill: skill });
@@ -139,7 +143,6 @@ class BattleEngine {
             }
         });
 
-        // 通常攻撃
         const target = this.selectTargets(u, 'randomEnemy', 1)[0];
         if (target) {
             const dmg = this.calcDamage(u, target, 1.0, 'atk');
@@ -159,7 +162,6 @@ class BattleEngine {
                     const dmg = this.calcDamage(caster, t, (eff.rate || 1) * scaling, eff.basis || 'atk');
                     this.applyDamage(caster, t, dmg, context.skillName);
                 } else if (eff.type === 'heal') {
-                    // Rule 14: 回復計算
                     const healBase = (145 * Math.log(Math.max(1, caster.hp)) - 900);
                     const heal = Math.max(0, Math.round(healBase * (eff.rate || 1) * scaling));
                     const actual = Math.min(t.maxHp - t.hp, heal);
@@ -184,7 +186,6 @@ class BattleEngine {
     calcDamage(attacker, target, rate, basis) {
         const atkVal = attacker.getCurrentStat(basis);
         const defVal = target.getCurrentStat('def');
-        // 基本ダメージ式：(ATK - DEF) * 1.5 + 兵力補正
         let dmg = (atkVal - defVal) * 1.5 + (attacker.hp / 100);
         return Math.max(1, Math.round(dmg * rate * (0.95 + Math.random() * 0.1)));
     }
@@ -204,14 +205,17 @@ class BattleEngine {
     finish(msg) { this.finished = true; this.log(`<div class="log-turn-start">=== ${msg} ===</div>`); }
 }
 
-// --- UI / 選択バグの修正 ---
+// --- UI制御 (入力欄の完全復旧) ---
 function renderTeams() {
     ['left', 'right'].forEach(side => {
         document.getElementById(`${side}Slots`).innerHTML = app.teams[side].map((slot, i) => {
             const h = app.heroes.find(x => x.id === slot.id);
-            return `<div class="slot">
+            return `
+            <div class="slot">
                 <label>${['指揮官','中軍','前衛'][i]}</label>
-                <div class="select-trigger ${h?'has-hero':''}" onclick="openHeroModal('${side}',${i})">${h?h.name:'英傑を選択'}</div>
+                <div class="select-trigger ${h?'has-hero':''}" onclick="openHeroModal('${side}',${i})">
+                    ${h ? h.name : '英傑を選択'}
+                </div>
                 <input type="number" value="${slot.troops}" onchange="updateSlot('${side}',${i},'troops',this.value)" placeholder="兵力">
                 <div class="input-row">
                     <select onchange="updateSlot('${side}',${i},'sub1',this.value)">
@@ -228,14 +232,35 @@ function renderTeams() {
     });
 }
 
-// 要望：全員同じ英傑にならないように初期化
+function updateSlot(side, idx, field, val) {
+    if(field === 'troops') app.teams[side][idx].troops = Number(val);
+    if(field === 'sub1') app.teams[side][idx].subSkills[0] = val;
+    if(field === 'sub2') app.teams[side][idx].subSkills[1] = val;
+    localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
+}
+
+// チームデータの初期化 (スロット連動を修正)
 async function loadData(force = false) {
-    /* ...fetch処理は維持... */
+    const localH = localStorage.getItem(STORE.heroes);
+    const localS = localStorage.getItem(STORE.skills);
+    if (force || !localH || !localS) {
+        const [h, s] = await Promise.all([
+            fetch('heroes_all.json').then(r => r.json()),
+            fetch('skills_all.json').then(r => r.json())
+        ]);
+        app.heroes = h; app.skills = s;
+        localStorage.setItem(STORE.heroes, JSON.stringify(h));
+        localStorage.setItem(STORE.skills, JSON.stringify(s));
+    } else {
+        app.heroes = JSON.parse(localH);
+        app.skills = JSON.parse(localS);
+    }
+
     const localT = localStorage.getItem(STORE.teams);
     if (localT) {
         app.teams = JSON.parse(localT);
     } else {
-        // 重要：fillを使わず、一つずつ新しいオブジェクトを作る
+        // 個別のオブジェクトを生成するように修正
         app.teams = {
             left: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ],
             right: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ]
@@ -244,4 +269,58 @@ async function loadData(force = false) {
     renderTeams(); initViewers();
 }
 
-// 以下、他のUIイベント（モーダル、保存等）は以前のものを継承
+// --- 他のイベントハンドラ (コピー、開始、モーダル等) ---
+function setupHandlers() {
+    document.getElementById('btnStart').onclick = () => {
+        document.getElementById('logContent').innerHTML = '';
+        app.battle = new BattleEngine(JSON.parse(JSON.stringify(app.teams)));
+        app.battle.nextChunk();
+    };
+    document.getElementById('btnNext').onclick = () => { if(app.battle) app.battle.nextChunk(); };
+    document.getElementById('btnClearLog').onclick = () => document.getElementById('logContent').innerHTML = '';
+    document.getElementById('btnCopyLog').onclick = () => {
+        navigator.clipboard.writeText(document.getElementById('logContent').innerText).then(() => alert("ログをコピーしました"));
+    };
+    document.getElementById('btnSyncFile').onclick = () => loadData(true);
+}
+
+function addHtmlLog(html) {
+    const content = document.getElementById('logContent');
+    const div = document.createElement('div');
+    div.className = 'log-entry'; div.innerHTML = html;
+    content.appendChild(div);
+    const area = document.getElementById('logArea');
+    area.scrollTop = area.scrollHeight;
+}
+
+function updateStatusDisplay() {
+    if (!app.battle) return;
+    document.getElementById('turnBadge').textContent = `Turn ${app.battle.turn}`;
+    document.getElementById('stateBadge').textContent = app.battle.finished ? '終了' : '進行中';
+}
+
+window.onload = async () => {
+    await loadData();
+    setupHandlers();
+};
+
+// モーダル制御
+window.openHeroModal = (side, idx) => {
+    app.currentSelectingSlot = { side, idx };
+    document.getElementById('heroGrid').innerHTML = app.heroes.map(h => `<div class="hero-item" onclick="selectHero('${h.id}')">${h.name}</div>`).join('');
+    document.getElementById('heroModal').style.display = 'block';
+};
+window.selectHero = id => {
+    const { side, idx } = app.currentSelectingSlot;
+    app.teams[side][idx].id = id;
+    localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
+    document.getElementById('heroModal').style.display = 'none';
+    renderTeams();
+};
+window.closeHeroModal = () => document.getElementById('heroModal').style.display = 'none';
+function initViewers() {
+    const hSel = document.getElementById('heroViewerSelect');
+    const sSel = document.getElementById('skillViewerSelect');
+    hSel.innerHTML = '<option value="">英傑選択</option>' + app.heroes.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
+    sSel.innerHTML = '<option value="">スキル選択</option>' + app.skills.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+}
