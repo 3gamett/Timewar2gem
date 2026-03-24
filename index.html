@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>時空戦記 Universal Engine (Expanded)</title>
+  <title>時空戦記 Universal Engine (Mobile Full)</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -45,12 +45,10 @@
     <section class="panel formation-panel">
       <div class="panel-head">
         <h2>軍団編成</h2>
-        <button id="btnSyncFile">ファイルから同期</button>
+        <button id="btnSyncFile">ファイル同期</button>
       </div>
-      
       <h3 class="team-label team-left">自軍 (Left)</h3>
       <div id="leftSlots" class="slots"></div>
-
       <h3 class="team-label team-right" style="margin-top:20px;">敵軍 (Right)</h3>
       <div id="rightSlots" class="slots"></div>
     </section>
@@ -59,9 +57,9 @@
       <div class="panel-head"><h2>データ確認</h2></div>
       <div class="viewer-layout">
         <select id="heroViewerSelect"></select>
-        <div id="heroViewerDetail" class="detail-box">英傑詳細</div>
+        <div id="heroViewerDetail" class="detail-box"></div>
         <select id="skillViewerSelect" style="margin-top:10px;"></select>
-        <div id="skillViewerDetail" class="detail-box">スキル詳細</div>
+        <div id="skillViewerDetail" class="detail-box"></div>
       </div>
     </section>
 
