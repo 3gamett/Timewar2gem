@@ -13,18 +13,29 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-s
 .header-title h1 { margin: 0; font-size: 1rem; }
 .header-title .sub { color: #a9b4d5; font-size: 0.7rem; }
 
+/* ターン切り替えUIのスタイル */
+.log-nav { display: flex; align-items: center; gap: 8px; background: #09101e; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--accent); }
+.log-nav button { background: transparent; border: none; font-size: 1rem; color: #fff; cursor: pointer; }
+#currentTurnLabel { font-size: 0.8rem; min-width: 50px; text-align: center; }
+
 .main-layout { display: flex; flex-direction: column; gap: 20px; padding: 10px; max-width: 600px; margin: 0 auto; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 15px; }
-.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;}
 
-/* ログエリアの拡大 */
 .log-panel { height: 600px; display: flex; flex-direction: column; }
 .log-area { 
   flex-grow: 1; overflow-y: auto; background: #090e1a; border-radius: 8px; padding: 12px;
   font-size: 0.85rem; line-height: 1.6; border: 1px solid #1a223f; color: #d0d7de;
+  position: relative; /* スクロール位置計算の基準に必要 */
 }
 
-/* スロット入力欄のデザイン */
+/* ログの装飾 */
+.log-skill { color: var(--skill); font-weight: bold; }
+.log-damage { color: var(--danger); font-weight: bold; }
+.log-heal { color: var(--good); font-weight: bold; }
+.log-turn-start { color: var(--accent); font-weight: bold; margin-top: 15px; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+.log-turn-end { color: var(--muted); font-size: 0.8rem; margin-top: 5px; margin-bottom: 15px; border-top: 1px dashed var(--line); padding-top: 5px; text-align: right; }
+
 .slots { display: flex; flex-direction: column; gap: 12px; }
 .slot { 
   background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; 
@@ -45,10 +56,12 @@ textarea { height: 150px; font-family: monospace; }
 button { background: #1c2341; color: #fff; border: 1px solid var(--line); padding: 10px; border-radius: 6px; cursor: pointer; flex: 1; }
 button.primary { background: linear-gradient(to bottom, #4a7dff, #2e5bc7); border: none; font-weight: bold; }
 button.danger { color: #ff5252; }
+.status-bar { display: flex; gap: 8px; margin-bottom: 8px; font-size: 0.75rem; }
+.status-bar span { background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 10px; }
 
-/* モーダル */
 .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); }
 .modal-content { background: #151a2c; margin: 15% auto; padding: 20px; width: 90%; border-radius: 12px; max-height: 70vh; overflow-y: auto; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
 .hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .hero-item { background: #1c2341; padding: 10px; text-align: center; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); }
 

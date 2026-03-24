@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>時空戦記 Universal Engine (Mobile Full)</title>
+  <title>時空戦記 Universal Engine (GitHub Edition)</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,17 +12,17 @@
       <h1>時空戦記</h1>
       <div class="sub">Advanced Universal Engine</div>
     </div>
-    <div class="log-nav">
-      <button id="btnPrevTurn">◀︎</button>
-      <span id="currentTurnLabel">Turn 0</span>
-      <button id="btnNextTurn">▶︎</button>
-    </div>
   </header>
 
   <main class="main-layout">
     <section class="panel log-panel">
       <div class="panel-head">
         <h2>戦闘ログ</h2>
+        <div class="log-nav">
+          <button id="btnPrevTurn">◀︎</button>
+          <span id="currentTurnLabel">Turn 0</span>
+          <button id="btnNextTurn">▶︎</button>
+        </div>
         <div class="row">
           <button id="btnCopyLog">コピー</button>
           <button id="btnClearLog" class="danger">消去</button>
@@ -74,15 +74,15 @@
   </main>
 
   <div id="heroModal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
+    <div class=\"modal-content\">
+      <div class=\"modal-header\">
         <h2>英傑を選択</h2>
-        <button class="close-btn" onclick="closeHeroModal()">&times;</button>
+        <button class=\"close-btn\" onclick=\"closeHeroModal()\">&times;</button>
       </div>
-      <div id="heroGrid" class="hero-grid"></div>
+      <div id=\"heroGrid\" class=\"hero-grid\"></div>
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src=\"app.js\"></script>
 </body>
 </html>

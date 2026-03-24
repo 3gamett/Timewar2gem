@@ -1,19 +1,15 @@
 const STORE = { 
-    heroes: 'tw.uni.heroes.v14', 
-    skills: 'tw.uni.skills.v14', 
-    teams: 'tw.uni.teams.v14' 
+    heroes: 'tw.uni.heroes.v15', 
+    skills: 'tw.uni.skills.v15', 
+    teams: 'tw.uni.teams.v15' 
 };
 
 let app = { 
-    heroes: [], 
-    skills: [], 
-    teams: null, 
-    battle: null, 
-    autoInterval: null, 
-    currentSelectingSlot: null 
+    heroes: [], skills: [], teams: null, battle: null, 
+    autoInterval: null, currentSelectingSlot: null 
 };
 
-// --- Unitクラス (属性増幅とステータス管理) ---
+// --- Unitクラス ---
 class Unit {
     constructor(heroData, teamData, side, posIdx) {
         this.uid = `${side}_${posIdx}`;
@@ -33,16 +29,12 @@ class Unit {
     }
 
     isAlive() { return this.hp > 0; }
-
-    // Rule 15: 属性値の増幅計算
     getScaledStat(statName) {
         let base = Number(this.baseStats[statName]) || 0;
         let flatMod = this.buffs.filter(b => b.stat === statName).reduce((sum, b) => sum + b.value, 0);
         let val = base + flatMod;
-        let multiplier = 1 + (val / 50) * 0.1;
-        return { value: Math.round(val), multiplier: multiplier };
+        return { value: Math.round(val), multiplier: 1 + (val / 50) * 0.1 };
     }
-
     getCurrentStat(statName) { return this.getScaledStat(statName).value; }
 }
 
@@ -65,9 +57,9 @@ class BattleEngine {
     }
 
     log(msg) {
-        if (!this.logsByTurn[this.viewTurn]) this.logsByTurn[this.viewTurn] = [];
-        this.logsByTurn[this.viewTurn].push(msg);
-        if (this.viewTurn === this.turn) addHtmlLog(msg);
+        if (!this.logsByTurn[this.turn]) this.logsByTurn[this.turn] = [];
+        this.logsByTurn[this.turn].push(msg);
+        addHtmlLog(msg); // 常に画面に出力し続ける
     }
 
     registerAllSkills() {
@@ -105,11 +97,15 @@ class BattleEngine {
     nextChunk() {
         if (this.finished) return;
         if (this.phase === 'opening') {
-            this.log(`<div class="log-turn-start">=== 戦闘開始 ===</div>`);
+            // スクロール先の目印になる id (turn-mark-0) を付与
+            this.log(`<div class="log-turn-start" id="turn-mark-0">=== 戦闘開始 ===</div>`);
             this.emit('onBattleStart');
             this.phase = 'action_start'; this.turn = 1; this.viewTurn = 1;
         } else if (this.phase === 'action_start') {
-            this.log(`<div class="log-turn-start">--- Turn ${this.turn} ---</div>`);
+            // 「開始」テキストに変更し、目印 id を付与
+            this.log(`<div class="log-turn-start" id="turn-mark-${this.turn}">--- Turn ${this.turn} 開始 ---</div>`);
+            document.getElementById('currentTurnLabel').textContent = `Turn ${this.turn}`;
+            this.viewTurn = this.turn;
             this.turnOrder = this.units.filter(u => u.isAlive()).sort((a,b) => b.getCurrentStat('agi') - a.getCurrentStat('agi'));
             this.turnIdx = 0; this.phase = 'action';
             this.nextChunk();
@@ -117,7 +113,9 @@ class BattleEngine {
             if (this.turnIdx < this.turnOrder.length) {
                 this.unitAction(this.turnOrder[this.turnIdx++]);
             } else {
-                this.tickTurnEnd(); // ターン終了時の処理（永続フラグ対応）
+                this.tickTurnEnd();
+                // ターン終了のテキストを追加
+                this.log(`<div class="log-turn-end">--- Turn ${this.turn} 終了 ---</div>`);
                 this.turn++; this.viewTurn = this.turn; this.phase = 'action_start';
                 if (this.turn > 8) this.finish("8ターン経過による引き分け");
             }
@@ -127,14 +125,9 @@ class BattleEngine {
 
     unitAction(u) {
         if (!u.isAlive()) return;
-        
-        // 【詳細ログ出力】兵力、負傷兵、4属性ステータスを表示
-        const atk = u.getCurrentStat('atk');
-        const def = u.getCurrentStat('def');
-        const int = u.getCurrentStat('int');
-        const agi = u.getCurrentStat('agi');
+        const atk = u.getCurrentStat('atk'); const def = u.getCurrentStat('def');
+        const int = u.getCurrentStat('int'); const agi = u.getCurrentStat('agi');
         const wounded = Math.max(0, u.maxHp - u.hp);
-        
         this.log(`▼ [行動] ${u.side==='left'?'自':'敵'} <b>${u.name}</b> 兵力:${Math.round(u.hp)}(負傷:${Math.round(wounded)}) [A:${atk} D:${def} I:${int} S:${agi}]`);
 
         const actives = [u.uniqueSkillId, ...u.subSkillIds].map(id => app.skills.find(x => x.id === id)).filter(x => x && (x.trigger === 'active' || x.trigger === 'action'));
@@ -171,20 +164,16 @@ class BattleEngine {
                     t.hp += actual;
                     this.log(`  + ${t.name} が <span class="log-heal">${actual} 回復</span> (${context.skillName}) 残:${Math.round(t.hp)}`);
                 } else if (eff.type === 'buff' || eff.type === 'debuff') {
-                    // 方法3: -1を永続フラグとして登録
                     t.buffs.push({ stat: eff.stat, value: eff.value, duration: eff.duration });
                 }
             });
         });
     }
 
-    // ターン終了時のバフ減少処理 (方法3: -1は減らさない)
     tickTurnEnd() {
         this.units.forEach(u => {
-            u.buffs = u.buffs.map(b => (b.duration === -1 ? b : { ...b, duration: b.duration - 1 }))
-                            .filter(b => b.duration === -1 || b.duration > 0);
-            u.statuses = u.statuses.map(s => (s.duration === -1 ? s : { ...s, duration: s.duration - 1 }))
-                                  .filter(s => s.duration === -1 || s.duration > 0);
+            u.buffs = u.buffs.map(b => (b.duration === -1 ? b : { ...b, duration: b.duration - 1 })).filter(b => b.duration === -1 || b.duration > 0);
+            u.statuses = u.statuses.map(s => (s.duration === -1 ? s : { ...s, duration: s.duration - 1 })).filter(s => s.duration === -1 || s.duration > 0);
         });
     }
 
@@ -216,12 +205,10 @@ class BattleEngine {
         else if (rightCap && rightCap.hp <= 0) this.finish("自軍の勝利！");
     }
 
-    finish(msg) { this.finished = true; this.log(`<div class="log-turn-start">=== ${msg} ===</div>`); }
+    finish(msg) { this.finished = true; this.log(`<div class="log-turn-start" id="turn-mark-end">=== ${msg} ===</div>`); }
 }
 
 // --- UI制御 ---
-
-// 【復旧】入力欄をすべて表示する処理
 function renderTeams() {
     ['left', 'right'].forEach(side => {
         const container = document.getElementById(`${side}Slots`);
@@ -257,7 +244,6 @@ function updateSlot(side, idx, field, val) {
     localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
 }
 
-// データのロードとエディタへの強制反映
 async function loadData(force = false) {
     const localH = localStorage.getItem(STORE.heroes);
     const localS = localStorage.getItem(STORE.skills);
@@ -281,14 +267,12 @@ async function loadData(force = false) {
     if (localT) {
         app.teams = JSON.parse(localT);
     } else {
-        // 独立したオブジェクトを生成（fillバグの修正）
         app.teams = {
             left: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ],
             right: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ]
         };
     }
     
-    // テキストエリアへの初期反映
     const hJsonEl = document.getElementById('heroesJson');
     const sJsonEl = document.getElementById('skillsJson');
     if(hJsonEl) hJsonEl.value = JSON.stringify(app.heroes, null, 2);
@@ -298,6 +282,19 @@ async function loadData(force = false) {
     initViewers();
 }
 
+// 指定したターンの開始地点へスクロールする関数
+function scrollToTurn(turn) {
+    document.getElementById('currentTurnLabel').textContent = `Turn ${turn}`;
+    const mark = document.getElementById(`turn-mark-${turn}`);
+    const area = document.getElementById('logArea');
+    if (mark && area) {
+        area.scrollTo({
+            top: mark.offsetTop - area.offsetTop,
+            behavior: 'smooth'
+        });
+    }
+}
+
 function setupHandlers() {
     document.getElementById('btnStart').onclick = () => {
         document.getElementById('logContent').innerHTML = '';
@@ -305,13 +302,27 @@ function setupHandlers() {
         app.battle.nextChunk();
     };
     document.getElementById('btnNext').onclick = () => { if(app.battle) app.battle.nextChunk(); };
+    
+    // スクロール操作への切り替え
+    document.getElementById('btnPrevTurn').onclick = () => {
+        if (app.battle && app.battle.viewTurn > 0) {
+            app.battle.viewTurn--;
+            scrollToTurn(app.battle.viewTurn);
+        }
+    };
+    document.getElementById('btnNextTurn').onclick = () => {
+        if (app.battle && app.battle.viewTurn < app.battle.turn && app.battle.viewTurn < 8) {
+            app.battle.viewTurn++;
+            scrollToTurn(app.battle.viewTurn);
+        }
+    };
+
     document.getElementById('btnClearLog').onclick = () => document.getElementById('logContent').innerHTML = '';
     document.getElementById('btnCopyLog').onclick = () => {
         navigator.clipboard.writeText(document.getElementById('logContent').innerText).then(() => alert("ログをコピーしました"));
     };
     document.getElementById('btnSyncFile').onclick = () => loadData(true);
     
-    // 保存ボタンの連動強化
     document.getElementById('btnSaveHeroes').onclick = () => {
         try {
             app.heroes = JSON.parse(document.getElementById('heroesJson').value);
@@ -359,7 +370,6 @@ window.onload = async () => {
     setupHandlers();
 };
 
-// モーダル・ビューア制御
 window.openHeroModal = (side, idx) => {
     app.currentSelectingSlot = { side, idx };
     document.getElementById('heroGrid').innerHTML = app.heroes.map(h => `<div class="hero-item" onclick="selectHero('${h.id}')">${h.name}</div>`).join('');
@@ -373,6 +383,7 @@ window.selectHero = id => {
     renderTeams();
 };
 window.closeHeroModal = () => document.getElementById('heroModal').style.display = 'none';
+
 function initViewers() {
     const hSel = document.getElementById('heroViewerSelect');
     const sSel = document.getElementById('skillViewerSelect');
@@ -388,3 +399,4 @@ function initViewers() {
         document.getElementById('skillViewerDetail').textContent = s ? `${s.name}\n${s.detail || ""}` : "";
     };
 }
+
