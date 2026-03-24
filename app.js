@@ -1,16 +1,15 @@
 const STORE = { 
-    heroes: 'tw.uni.heroes.v16', 
-    skills: 'tw.uni.skills.v16', 
-    teams: 'tw.uni.teams.v16' 
+    heroes: 'tw.uni.heroes.v17', 
+    skills: 'tw.uni.skills.v17', 
+    teams: 'tw.uni.teams.v17' 
 };
 
 let app = { heroes: [], skills: [], teams: null, battle: null, autoInterval: null, currentSelectingSlot: null };
 
-// 【復旧】グローバルエラーキャッチ (プログラムが落ちた時にログに赤字で出す)
+// グローバルエラーキャッチ (欠落防止)
 window.addEventListener('error', (e) => {
     console.error(e);
-    const errHtml = `<div class="log-error">[システムエラー] ${e.message}</div>`;
-    addHtmlLog(errHtml);
+    addHtmlLog(`<div class="log-error">[システムエラー] ${e.message}</div>`);
 });
 
 // --- Unitクラス ---
@@ -71,7 +70,11 @@ class BattleEngine {
             skillIds.forEach(id => {
                 const s = app.skills.find(x => x.id === id);
                 if (!s) return;
-                if (s.trigger === 'passive' || s.trigger === 'engage') this.executeEffects(u, s.effects, { skillName: s.name });
+                // エンゲージ（戦闘前処理）
+                if (s.trigger === 'passive' || s.trigger === 'engage') {
+                    this.log(` ★ <span class="log-skill">[${s.name}]</span> 発動準備 (戦闘前)`);
+                    this.executeEffects(u, s.effects, { skillName: s.name });
+                }
                 if (s.effects) {
                     s.effects.forEach(eff => {
                         if (eff.type === 'register_hook') {
@@ -83,17 +86,24 @@ class BattleEngine {
         });
     }
 
+    // 抽選によるフック発動（不発ログを追加）
     emit(eventName, context = {}) {
         this.hooks.filter(h => h.event === eventName).forEach(h => {
             if (!h.owner.isAlive()) return;
-            if (Math.random() * 100 < h.chance) this.executeEffects(h.owner, h.effects, { ...context, skillName: h.skillName });
+            const chance = h.chance || 100;
+            if (Math.random() * 100 < chance) {
+                this.executeEffects(h.owner, h.effects, { ...context, skillName: `${h.skillName} (追加効果)` });
+            } else {
+                this.log(`  <span class="log-muted">- [${h.skillName} の追加効果] は確率(${chance}%)により不発</span>`);
+            }
         });
     }
 
     nextChunk() {
         if (this.finished) return;
         if (this.phase === 'opening') {
-            this.log(`<div class="log-turn-start" id="turn-mark-0">=== 戦闘開始 ===</div>`);
+            // Turn 0 の処理
+            this.log(`<div class="log-turn-start" id="turn-mark-0">=== 戦闘前処理 (Turn 0) ===</div>`);
             this.emit('onBattleStart');
             this.phase = 'action_start'; this.turn = 1; this.viewTurn = 1;
         } else if (this.phase === 'action_start') {
@@ -123,12 +133,16 @@ class BattleEngine {
         const wounded = Math.max(0, u.maxHp - u.hp);
         this.log(`▼ [行動] ${u.side==='left'?'自':'敵'} <b>${u.name}</b> 兵力:${Math.round(u.hp)}(負傷:${Math.round(wounded)}) [A:${atk} D:${def} I:${int} S:${agi}]`);
 
+        // アクティブスキル（確率による不発ログを追加）
         const actives = [u.uniqueSkillId, ...u.subSkillIds].map(id => app.skills.find(x => x.id === id)).filter(x => x && (x.trigger === 'active' || x.trigger === 'action'));
         actives.forEach(skill => {
             this.emit('onSkillAttempt', { actor: u, skill: skill });
-            if (Math.random() * 100 < (skill.chance || 0)) {
+            const chance = skill.chance || 0;
+            if (Math.random() * 100 < chance) {
                 this.log(` ★ <span class="log-skill">[${skill.name}]</span> 発動！`);
                 this.executeEffects(u, skill.effects, { skillName: skill.name });
+            } else {
+                this.log(`  <span class="log-muted">- [${skill.name}] は確率(${chance}%)により不発</span>`);
             }
         });
 
@@ -139,6 +153,7 @@ class BattleEngine {
             this.emit('onNormalAttack', { actor: u, target: target });
         }
         this.checkDeaths();
+        this.emit('onActionEnd', { actor: u });
     }
 
     executeEffects(caster, effects, context) {
@@ -156,17 +171,38 @@ class BattleEngine {
                     const actual = Math.min(t.maxHp - t.hp, heal);
                     t.hp += actual;
                     this.log(`  + ${t.name} が <span class="log-heal">${actual} 回復</span> (${context.skillName}) 残:${Math.round(t.hp)}`);
-                } else if (eff.type === 'buff' || eff.type === 'debuff') {
-                    t.buffs.push({ stat: eff.stat, value: eff.value, duration: eff.duration });
+                } else if (eff.type === 'buff' || eff.type === 'debuff' || eff.type === 'stackBuff') {
+                    // 詳細なバフ獲得ログ
+                    const durStr = eff.duration === -1 ? '永続' : `${eff.duration}ターン`;
+                    const buffName = eff.detail || eff.stat || '状態変化';
+                    t.buffs.push({ stat: eff.stat, value: eff.value, duration: eff.duration, name: buffName });
+                    const color = (eff.type === 'debuff' || eff.value < 0) ? 'log-damage' : 'log-heal';
+                    this.log(`  + ${t.name} は <span class="${color}">[${buffName}]</span> を獲得 (${durStr})`);
+                } else if (eff.type === 'evolve_buff') {
+                    // ダーウィンなどの特殊効果による獲得ログ
+                    const buffs = ['攻撃・知力クリティカル', 'スプラッシュ', '回避', '捕虜/離間', '無敵', '連撃', '回避無視', '先手'];
+                    const count = Math.random() < 0.5 ? 1 : 2;
+                    const picked = buffs.sort(() => 0.5 - Math.random()).slice(0, count);
+                    picked.forEach(b => {
+                        t.buffs.push({ stat: 'custom', value: b, duration: -1, name: b });
+                        this.log(`  + ${t.name} は進化により <span class="log-heal">[${b}]</span> を獲得 (永続)`);
+                    });
                 }
             });
         });
     }
 
+    // 消失時の詳細ログ
     tickTurnEnd() {
         this.units.forEach(u => {
-            // -1 は減らさず維持する (永続)
+            u.buffs.forEach(b => {
+                if (b.duration === 1) this.log(`  <span class="log-muted">- ${u.name} の [${b.name}] の効果が切れた</span>`);
+            });
             u.buffs = u.buffs.map(b => (b.duration === -1 ? b : { ...b, duration: b.duration - 1 })).filter(b => b.duration === -1 || b.duration > 0);
+            
+            u.statuses.forEach(s => {
+                if (s.duration === 1) this.log(`  <span class="log-muted">- ${u.name} の [${s.name}] の効果が切れた</span>`);
+            });
             u.statuses = u.statuses.map(s => (s.duration === -1 ? s : { ...s, duration: s.duration - 1 })).filter(s => s.duration === -1 || s.duration > 0);
         });
     }
@@ -203,7 +239,6 @@ class BattleEngine {
 
 // --- UI制御 ---
 
-// 【復旧】常に描画される編成関数
 function renderTeams() {
     ['left', 'right'].forEach(side => {
         const container = document.getElementById(`${side}Slots`);
@@ -239,7 +274,6 @@ function updateSlot(side, idx, field, val) {
     localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
 }
 
-// 【復旧】エラーで止まらず、空データでも確実にUIを初期化する
 async function loadData(force = false) {
     const localH = localStorage.getItem(STORE.heroes);
     const localS = localStorage.getItem(STORE.skills);
@@ -267,7 +301,6 @@ async function loadData(force = false) {
         try { app.teams = JSON.parse(localT); } catch(e){ app.teams = null; }
     }
     
-    // データが存在しない（消去された）場合は、個別の空スロットを生成
     if (!app.teams) {
         app.teams = {
             left: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ],
@@ -275,24 +308,25 @@ async function loadData(force = false) {
         };
     }
     
-    // エディタへ強制反映
     const hJsonEl = document.getElementById('heroesJson');
     const sJsonEl = document.getElementById('skillsJson');
     if(hJsonEl) hJsonEl.value = JSON.stringify(app.heroes, null, 2);
     if(sJsonEl) sJsonEl.value = JSON.stringify(app.skills, null, 2);
 
-    // 取得に失敗していても必ずUIを描画する
     renderTeams(); 
     initViewers();
 }
 
-// ターン切り替えスクロール
+// 修正: ターン切り替え時に「そのターンの開始行」を完全に一番上へスクロールさせる
 function scrollToTurn(turn) {
     document.getElementById('currentTurnLabel').textContent = `Turn ${turn}`;
     const mark = document.getElementById(`turn-mark-${turn}`);
     const area = document.getElementById('logArea');
     if (mark && area) {
-        area.scrollTo({ top: mark.offsetTop - area.offsetTop, behavior: 'smooth' });
+        area.scrollTo({ 
+            top: mark.offsetTop - area.offsetTop, 
+            behavior: 'smooth' 
+        });
     }
 }
 
@@ -317,7 +351,6 @@ function setupHandlers() {
     document.getElementById('btnCopyLog').onclick = () => navigator.clipboard.writeText(document.getElementById('logContent').innerText).then(() => alert("ログをコピーしました"));
     document.getElementById('btnSyncFile').onclick = () => loadData(true);
     
-    // 【復旧】詳細なJSONエラー通知
     document.getElementById('btnSaveHeroes').onclick = () => {
         try {
             app.heroes = JSON.parse(document.getElementById('heroesJson').value);

@@ -13,14 +13,17 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-s
 .header-title h1 { margin: 0; font-size: 1rem; }
 .header-title .sub { color: var(--muted); font-size: 0.7rem; }
 
-/* ターンナビゲーション */
-.log-nav { display: flex; align-items: center; gap: 8px; background: #09101e; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--accent); }
-.log-nav button { background: transparent; border: none; font-size: 1rem; color: #fff; cursor: pointer; }
-#currentTurnLabel { font-size: 0.8rem; min-width: 50px; text-align: center; }
+/* 修正：ログのヘッダーを一列に収める */
+.log-header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: nowrap; gap: 4px; margin-bottom: 10px; }
+.log-title { font-size: 0.95rem; margin: 0; white-space: nowrap; }
+.log-nav { display: flex; align-items: center; gap: 4px; background: #09101e; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--accent); flex-shrink: 0; }
+.log-nav button { background: transparent; border: none; font-size: 0.85rem; color: #fff; cursor: pointer; padding: 2px 4px; }
+#currentTurnLabel { font-size: 0.8rem; min-width: 45px; text-align: center; white-space: nowrap; font-weight: bold;}
+.log-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.log-actions button { font-size: 0.75rem; padding: 4px 8px; }
 
 .main-layout { display: flex; flex-direction: column; gap: 20px; padding: 10px; max-width: 600px; margin: 0 auto; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 15px; }
-.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;}
 
 .log-panel { height: 600px; display: flex; flex-direction: column; }
 .log-area { 
@@ -28,10 +31,11 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-s
   font-size: 0.85rem; line-height: 1.6; border: 1px solid #1a223f; color: #d0d7de; position: relative; scroll-behavior: smooth;
 }
 
-/* ログ装飾・エラー表示 */
+/* ログ装飾・エラー・不発表示 */
 .log-skill { color: var(--skill); font-weight: bold; }
 .log-damage { color: var(--danger); font-weight: bold; }
 .log-heal { color: var(--good); font-weight: bold; }
+.log-muted { color: #6a738c; font-size: 0.8rem; }
 .log-turn-start { color: var(--accent); font-weight: bold; margin-top: 15px; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
 .log-turn-end { color: var(--muted); font-size: 0.8rem; margin-top: 5px; margin-bottom: 15px; border-top: 1px dashed var(--line); padding-top: 5px; text-align: right; }
 .log-error { color: #ff1744; font-weight: bold; background: rgba(255,0,0,0.1); padding: 8px; border-left: 4px solid #ff1744; margin-top: 10px; }
