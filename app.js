@@ -1,7 +1,7 @@
 const STORE = { 
-    heroes: 'tw.uni.heroes.v12', 
-    skills: 'tw.uni.skills.v12', 
-    teams: 'tw.uni.teams.v12' 
+    heroes: 'tw.uni.heroes.v13', 
+    skills: 'tw.uni.skills.v13', 
+    teams: 'tw.uni.teams.v13' 
 };
 
 let app = { 
@@ -13,7 +13,7 @@ let app = {
     currentSelectingSlot: null 
 };
 
-// --- Unitクラス (属性増幅と詳細ステータス取得) ---
+// --- Unitクラス ---
 class Unit {
     constructor(heroData, teamData, side, posIdx) {
         this.uid = `${side}_${posIdx}`;
@@ -24,7 +24,10 @@ class Unit {
         this.posLabel = ['指揮官', '中軍', '前衛'][posIdx];
         this.maxHp = Number(teamData.troops) || 10000;
         this.hp = this.maxHp;
-        this.baseStats = { ...heroData.stats };
+        
+        // ステータスが空でもNaNにならないよう保護
+        this.baseStats = heroData.stats || { atk: 100, def: 100, int: 100, agi: 100, rng: 3 };
+        
         this.uniqueSkillId = heroData.unique;
         this.subSkillIds = (teamData.subSkills || []).slice(0, 2);
         this.buffs = [];
@@ -39,7 +42,6 @@ class Unit {
         let base = Number(this.baseStats[statName]) || 0;
         let flatMod = this.buffs.filter(b => b.stat === statName).reduce((sum, b) => sum + b.value, 0);
         let val = base + flatMod;
-        // ステータス50ごとに10%増加
         let multiplier = 1 + (val / 50) * 0.1;
         return { value: Math.round(val), multiplier: multiplier };
     }
@@ -47,7 +49,7 @@ class Unit {
     getCurrentStat(statName) { return this.getScaledStat(statName).value; }
 }
 
-// --- 戦闘エンジン (詳細ログとスキル.txt対応) ---
+// --- 戦闘エンジン ---
 class BattleEngine {
     constructor(teams) {
         this.turn = 0; this.viewTurn = 0; this.phase = 'opening';
@@ -84,11 +86,8 @@ class BattleEngine {
                     s.effects.forEach(eff => {
                         if (eff.type === 'register_hook') {
                             this.hooks.push({
-                                event: eff.hookEvent,
-                                chance: eff.hookChance || 100,
-                                effects: eff.hookEffects,
-                                owner: u,
-                                skillName: s.name
+                                event: eff.hookEvent, chance: eff.hookChance || 100,
+                                effects: eff.hookEffects, owner: u, skillName: s.name
                             });
                         }
                     });
@@ -130,9 +129,15 @@ class BattleEngine {
 
     unitAction(u) {
         if (!u.isAlive()) return;
-        const s = { atk: u.getCurrentStat('atk'), def: u.getCurrentStat('def'), int: u.getCurrentStat('int'), agi: u.getCurrentStat('agi') };
-        // 詳細な兵力とステータスの表示
-        this.log(`▼ [行動] ${u.side==='left'?'自':'敵'}<b>${u.name}</b> 兵力:${Math.round(u.hp)}(負傷:${Math.round(u.maxHp-u.hp)}) [A:${s.atk} D:${s.def} I:${s.int} S:${s.agi}]`);
+        
+        // 【要望反映】兵力、負傷兵、4属性ステータスを出力
+        const atk = u.getCurrentStat('atk');
+        const def = u.getCurrentStat('def');
+        const int = u.getCurrentStat('int');
+        const agi = u.getCurrentStat('agi');
+        const wounded = Math.max(0, u.maxHp - u.hp);
+        
+        this.log(`▼ [行動] ${u.side==='left'?'自':'敵'} <b>${u.name}</b> 兵力:${Math.round(u.hp)}(負傷:${Math.round(wounded)}) [A:${atk} D:${def} I:${int} S:${agi}]`);
 
         const actives = [u.uniqueSkillId, ...u.subSkillIds].map(id => app.skills.find(x => x.id === id)).filter(x => x && (x.trigger === 'active' || x.trigger === 'action'));
         actives.forEach(skill => {
@@ -205,7 +210,9 @@ class BattleEngine {
     finish(msg) { this.finished = true; this.log(`<div class="log-turn-start">=== ${msg} ===</div>`); }
 }
 
-// --- UI制御 (入力欄の完全復旧) ---
+// --- UI制御 ---
+
+// 【復旧】入力欄をすべて表示する処理
 function renderTeams() {
     ['left', 'right'].forEach(side => {
         document.getElementById(`${side}Slots`).innerHTML = app.teams[side].map((slot, i) => {
@@ -239,18 +246,21 @@ function updateSlot(side, idx, field, val) {
     localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
 }
 
-// チームデータの初期化 (スロット連動を修正)
+// 【重要】データのロードとエディタへの反映
 async function loadData(force = false) {
     const localH = localStorage.getItem(STORE.heroes);
     const localS = localStorage.getItem(STORE.skills);
+    
     if (force || !localH || !localS) {
-        const [h, s] = await Promise.all([
-            fetch('heroes_all.json').then(r => r.json()),
-            fetch('skills_all.json').then(r => r.json())
-        ]);
-        app.heroes = h; app.skills = s;
-        localStorage.setItem(STORE.heroes, JSON.stringify(h));
-        localStorage.setItem(STORE.skills, JSON.stringify(s));
+        try {
+            const [h, s] = await Promise.all([
+                fetch('heroes_all.json').then(r => r.json()),
+                fetch('skills_all.json').then(r => r.json())
+            ]);
+            app.heroes = h || []; app.skills = s || [];
+            localStorage.setItem(STORE.heroes, JSON.stringify(app.heroes));
+            localStorage.setItem(STORE.skills, JSON.stringify(app.skills));
+        } catch(e) { console.error("Fetchエラー", e); }
     } else {
         app.heroes = JSON.parse(localH);
         app.skills = JSON.parse(localS);
@@ -260,16 +270,22 @@ async function loadData(force = false) {
     if (localT) {
         app.teams = JSON.parse(localT);
     } else {
-        // 個別のオブジェクトを生成するように修正
         app.teams = {
             left: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ],
             right: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ]
         };
     }
-    renderTeams(); initViewers();
+    
+    // 【修正】テキストエリアへの反映（これが抜けていたためJSON編集が壊れていました）
+    const hJsonEl = document.getElementById('heroesJson');
+    const sJsonEl = document.getElementById('skillsJson');
+    if(hJsonEl) hJsonEl.value = JSON.stringify(app.heroes, null, 2);
+    if(sJsonEl) sJsonEl.value = JSON.stringify(app.skills, null, 2);
+
+    renderTeams(); 
+    initViewers();
 }
 
-// --- 他のイベントハンドラ (コピー、開始、モーダル等) ---
 function setupHandlers() {
     document.getElementById('btnStart').onclick = () => {
         document.getElementById('logContent').innerHTML = '';
@@ -282,6 +298,37 @@ function setupHandlers() {
         navigator.clipboard.writeText(document.getElementById('logContent').innerText).then(() => alert("ログをコピーしました"));
     };
     document.getElementById('btnSyncFile').onclick = () => loadData(true);
+    
+    // 【修正】保存ボタンのエラー保護
+    document.getElementById('btnSaveHeroes').onclick = () => {
+        try {
+            app.heroes = JSON.parse(document.getElementById('heroesJson').value);
+            localStorage.setItem(STORE.heroes, JSON.stringify(app.heroes));
+            renderTeams(); initViewers(); alert("英傑データを保存しました");
+        } catch (e) {
+            alert("英傑JSONの形式が正しくありません。\n" + e.message);
+        }
+    };
+    document.getElementById('btnSaveSkills').onclick = () => {
+        try {
+            app.skills = JSON.parse(document.getElementById('skillsJson').value);
+            localStorage.setItem(STORE.skills, JSON.stringify(app.skills));
+            renderTeams(); initViewers(); alert("スキルデータを保存しました");
+        } catch (e) {
+            alert("スキルJSONの形式が正しくありません。\n" + e.message);
+        }
+    };
+    
+    document.getElementById('btnAuto').onclick = () => {
+        if (app.autoInterval) return;
+        app.autoInterval = setInterval(() => {
+            if (!app.battle || app.battle.finished) {
+                clearInterval(app.autoInterval); app.autoInterval = null; return;
+            }
+            app.battle.nextChunk();
+        }, 500);
+    };
+    document.getElementById('btnStop').onclick = () => { clearInterval(app.autoInterval); app.autoInterval = null; };
 }
 
 function addHtmlLog(html) {
@@ -304,7 +351,7 @@ window.onload = async () => {
     setupHandlers();
 };
 
-// モーダル制御
+// モーダル・ビューア制御
 window.openHeroModal = (side, idx) => {
     app.currentSelectingSlot = { side, idx };
     document.getElementById('heroGrid').innerHTML = app.heroes.map(h => `<div class="hero-item" onclick="selectHero('${h.id}')">${h.name}</div>`).join('');
@@ -323,4 +370,12 @@ function initViewers() {
     const sSel = document.getElementById('skillViewerSelect');
     hSel.innerHTML = '<option value="">英傑選択</option>' + app.heroes.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
     sSel.innerHTML = '<option value="">スキル選択</option>' + app.skills.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    hSel.onchange = () => {
+        const h = app.heroes.find(x => x.id === hSel.value);
+        document.getElementById('heroViewerDetail').textContent = h ? `${h.name}\nATK:${h.stats.atk} DEF:${h.stats.def} INT:${h.stats.int} AGI:${h.stats.agi}` : "";
+    };
+    sSel.onchange = () => {
+        const s = app.skills.find(x => x.id === sSel.value);
+        document.getElementById('skillViewerDetail').textContent = s ? `${s.name}\n${s.detail || ""}` : "";
+    };
 }
