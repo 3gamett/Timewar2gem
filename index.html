@@ -1,101 +1,107 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>時空戦記 Complete</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>時空戦記 Advanced Universal Engine</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="app-header">
-    <div class="header-main">
-      <h1>時空戦記 Complete</h1>
-      <div class="log-nav-top">
-        <button id="btnPrevTurn">◀︎</button>
-        <span id="currentTurnLabel">Turn 0</span>
-        <button id="btnNextTurn">▶︎</button>
-      </div>
+  <header class="topbar">
+    <div class="header-title">
+      <h1>時空戦記 Advanced Universal Engine</h1>
+      <div class="sub">データ駆動型スキル・英傑システム（完全版）</div>
+    </div>
+    <div class="top-actions">
+      <button id="btnLoadDefault">初期化</button>
+      <button id="btnSaveAll">すべて保存</button>
     </div>
   </header>
 
-  <main class="layout">
-    <section class="card log-card">
-      <div class="section-head">
+  <main class="grid-layout">
+    <section class="panel log-panel">
+      <div class="panel-head">
         <h2>戦闘ログ</h2>
-        <div class="actions">
+        <div class="log-nav">
+          <button id="btnPrevTurn">◀︎</button>
+          <span id="currentTurnLabel">Turn 0</span>
+          <button id="btnNextTurn">▶︎</button>
+        </div>
+        <div class="row">
           <button id="btnCopyLog">コピー</button>
           <button id="btnClearLog" class="danger">消去</button>
         </div>
       </div>
-      <div id="logScrollArea" class="log-container">
-        <pre id="logView" class="log"></pre>
+      <div class="battle-control-row">
+        <button id="btnStart" class="primary">戦闘開始</button>
+        <button id="btnNext">次の挙動</button>
+        <button id="btnAuto">オート</button>
+        <button id="btnStop">停止</button>
       </div>
+      <div class="battle-control-row status-bar">
+        <span id="turnBadge">Turn 0</span>
+        <span id="phaseBadge">Phase: -</span>
+        <span id="stateBadge">待機中</span>
+      </div>
+      <div id="logArea" class="log-area"><pre id="log">準備完了。</pre></div>
     </section>
 
-    <section class="card hero-card">
-      <h2>クイック操作</h2>
-      <div class="quick-actions">
-        <button id="btnLoadDefaults" class="primary">初期データを復元</button>
-        <button id="btnSaveAll">今の状態を保存</button>
-        <button id="btnLoadSample">サンプル編成</button>
-      </div>
-      
-      <div class="battle-controls">
-        <div class="status-bar">
-          <span id="battleStatus">待機中</span>
-          <span id="turnStatus">Turn: -</span>
-          <span id="chunkStatus">Phase: -</span>
+    <div class="right-column">
+      <section class="panel formation-panel">
+        <div class="panel-head">
+          <h2>軍団編成</h2>
+          <button id="btnRefresh">反映</button>
         </div>
-        <div class="main-btns">
-          <button id="btnStartBattle" class="primary">戦闘開始</button>
-          <button id="btnNextChunk">次の挙動</button>
-          <button id="btnAutoRun">オート進行</button>
-          <button id="btnStopAuto">停止</button>
+        <div class="two-col">
+          <div>
+            <h3 class="team-label team-left">自軍 (Left)</h3>
+            <div id="leftSlots" class="slots"></div>
+          </div>
+          <div>
+            <h3 class="team-label team-right">敵軍 (Right)</h3>
+            <div id="rightSlots" class="slots"></div>
+          </div>
         </div>
-        <div class="player-skills">
-          <button id="btnReverse">時環の逆行</button>
-          <button id="btnRewind">時環の巻き戻し</button>
-          <button id="btnProtect">時環の加護</button>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="card formation-card">
-      <div class="section-head">
-        <h2>軍団編成</h2>
-        <button id="btnRefreshSlots">反映</button>
-      </div>
-      <div class="teams-container">
-        <div class="team-block">
-          <h3>自軍</h3>
-          <div id="teamLeftSlots" class="slots"></div>
+      <section class="panel viewer-panel">
+        <div class="panel-head">
+          <h2>英傑・スキル確認</h2>
         </div>
-        <div class="team-block">
-          <h3>敵軍</h3>
-          <div id="teamRightSlots" class="slots"></div>
+        <div class="viewer-layout">
+          <div class="viewer-section">
+            <h3>英傑ビュー</h3>
+            <select id="heroViewerSelect">
+              <option value="">英傑を選択</option>
+            </select>
+            <div id="heroViewerDetail" class="detail-box">英傑を選択してください。</div>
+          </div>
+          <div class="viewer-section">
+            <h3>スキルビュー</h3>
+            <select id="skillViewerSelect">
+              <option value="">スキルを選択</option>
+            </select>
+            <div id="skillViewerDetail" class="detail-box">スキルを選択してください。</div>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="card editor-card">
-      <h2>JSONエディタ</h2>
-      
-      <div class="editor-group">
-        <div class="editor-header">
-          <h3>英傑一覧 設定</h3>
-          <button id="btnHeroesSave">英傑保存</button>
+      <section class="panel editor-panel">
+        <div class="panel-head">
+          <h2>英傑JSON</h2>
+          <button id="btnSaveHeroes">英傑保存</button>
         </div>
-        <textarea id="heroesJson" spellcheck="false"></textarea>
-      </div>
+        <textarea id="heroesJson" spellcheck="false" placeholder="英傑データをここに入力"></textarea>
+      </section>
 
-      <div class="editor-group">
-        <div class="editor-header">
-          <h3>サブスキル一覧 設定</h3>
-          <button id="btnSkillsSave">スキル保存</button>
+      <section class="panel editor-panel">
+        <div class="panel-head">
+          <h2>スキルJSON</h2>
+          <button id="btnSaveSkills">スキル保存</button>
         </div>
-        <textarea id="skillsJson" spellcheck="false"></textarea>
-      </div>
-    </section>
+        <textarea id="skillsJson" spellcheck="false" placeholder="スキルデータをここに入力"></textarea>
+      </section>
+    </div>
   </main>
 
   <script src="app.js"></script>

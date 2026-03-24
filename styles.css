@@ -1,111 +1,109 @@
-:root {
-  --bg: #0b1020;
-  --panel: #151a2c;
-  --text: #f5f7ff;
-  --muted: #aeb8d6;
-  --line: #2a3156;
-  --accent: #7aa2ff;
-  --danger: #ff6b6b;
-  --radius: 12px;
-}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>時空戦記 Advanced Universal Engine</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="header-title">
+      <h1>時空戦記 Advanced Universal Engine</h1>
+      <div class="sub">データ駆動型スキル・英傑システム（完全版）</div>
+    </div>
+    <div class="top-actions">
+      <button id="btnLoadDefault">初期化</button>
+      <button id="btnSaveAll">すべて保存</button>
+    </div>
+  </header>
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: sans-serif;
-}
+  <main class="grid-layout">
+    <section class="panel log-panel">
+      <div class="panel-head">
+        <h2>戦闘ログ</h2>
+        <div class="log-nav">
+          <button id="btnPrevTurn">◀︎</button>
+          <span id="currentTurnLabel">Turn 0</span>
+          <button id="btnNextTurn">▶︎</button>
+        </div>
+        <div class="row">
+          <button id="btnCopyLog">コピー</button>
+          <button id="btnClearLog" class="danger">消去</button>
+        </div>
+      </div>
+      <div class="battle-control-row">
+        <button id="btnStart" class="primary">戦闘開始</button>
+        <button id="btnNext">次の挙動</button>
+        <button id="btnAuto">オート</button>
+        <button id="btnStop">停止</button>
+      </div>
+      <div class="battle-control-row status-bar">
+        <span id="turnBadge">Turn 0</span>
+        <span id="phaseBadge">Phase: -</span>
+        <span id="stateBadge">待機中</span>
+      </div>
+      <div id="logArea" class="log-area"><pre id="log">準備完了。</pre></div>
+    </section>
 
-.header-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 20px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-}
+    <div class="right-column">
+      <section class="panel formation-panel">
+        <div class="panel-head">
+          <h2>軍団編成</h2>
+          <button id="btnRefresh">反映</button>
+        </div>
+        <div class="two-col">
+          <div>
+            <h3 class="team-label team-left">自軍 (Left)</h3>
+            <div id="leftSlots" class="slots"></div>
+          </div>
+          <div>
+            <h3 class="team-label team-right">敵軍 (Right)</h3>
+            <div id="rightSlots" class="slots"></div>
+          </div>
+        </div>
+      </section>
 
-.log-nav-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: #09101e;
-  padding: 5px 15px;
-  border-radius: 20px;
-  border: 1px solid var(--accent);
-}
+      <section class="panel viewer-panel">
+        <div class="panel-head">
+          <h2>英傑・スキル確認</h2>
+        </div>
+        <div class="viewer-layout">
+          <div class="viewer-section">
+            <h3>英傑ビュー</h3>
+            <select id="heroViewerSelect">
+              <option value="">英傑を選択</option>
+            </select>
+            <div id="heroViewerDetail" class="detail-box">英傑を選択してください。</div>
+          </div>
+          <div class="viewer-section">
+            <h3>スキルビュー</h3>
+            <select id="skillViewerSelect">
+              <option value="">スキルを選択</option>
+            </select>
+            <div id="skillViewerDetail" class="detail-box">スキルを選択してください。</div>
+          </div>
+        </div>
+      </section>
 
-.layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  padding: 20px;
-}
+      <section class="panel editor-panel">
+        <div class="panel-head">
+          <h2>英傑JSON</h2>
+          <button id="btnSaveHeroes">英傑保存</button>
+        </div>
+        <textarea id="heroesJson" spellcheck="false" placeholder="英傑データをここに入力"></textarea>
+      </section>
 
-.card {
-  background: var(--panel);
-  border-radius: var(--radius);
-  padding: 16px;
-  border: 1px solid var(--line);
-  margin-bottom: 20px;
-}
+      <section class="panel editor-panel">
+        <div class="panel-head">
+          <h2>スキルJSON</h2>
+          <button id="btnSaveSkills">スキル保存</button>
+        </div>
+        <textarea id="skillsJson" spellcheck="false" placeholder="スキルデータをここに入力"></textarea>
+      </section>
+    </div>
+  </main>
 
-.log-container {
-  height: 350px;
-  overflow-y: auto;
-  background: #0d1120;
-  padding: 10px;
-  border-radius: 8px;
-}
-
-.log { font-size: 0.9rem; white-space: pre-wrap; margin: 0; }
-
-.status-bar { display: flex; gap: 15px; margin-bottom: 10px; opacity: 0.9; }
-
-.slots { display: flex; flex-direction: column; gap: 10px; }
-.slot {
-  background: rgba(255,255,255,0.05);
-  padding: 10px;
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.slot-label {
-  font-size: 0.85rem;
-  color: var(--accent);
-  margin-bottom: 4px;
-  font-weight: bold;
-}
-
-.slot select, .slot input, textarea {
-  background: #09101e;
-  color: #fff;
-  border: 1px solid var(--line);
-  padding: 6px;
-  border-radius: 4px;
-}
-
-.editor-group {
-  margin-bottom: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.editor-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-textarea { height: 250px; font-family: monospace; width: 100%; box-sizing: border-box; }
-
-button {
-  cursor: pointer;
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: #21284a;
-  color: #fff;
-}
-button.primary { background: #3f66de; border: none; }
+  <script src="app.js"></script>
+</body>
+</html>

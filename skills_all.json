@@ -1,0 +1,161 @@
+[
+  {
+    "id": "unstoppable_daimyo",
+    "name": "信長 (Unstoppable Daimyo)",
+    "trigger": "engage",
+    "detail": "自軍がアクティブ発動試行時、敵のATK/DEF/INTを減少(DEFに基づく、累積、戦後)。通常攻撃を1回行う。",
+    "effects": [
+      { "type": "pounce_get", "target": "self", "value": 1, "detail": "通常攻撃回数を1回獲得" },
+      {
+        "type": "register_hook",
+        "hookEvent": "onSkillAttempt",
+        "hookChance": 100,
+        "hookEffects": [
+          { "type": "buff", "target": "enemyRandom", "count": 2, "stat": "atk", "value": -12, "duration": Infinity, "statType": "flat", "detail": "敵のATK減少" },
+          { "type": "buff", "target": "enemyRandom", "count": 2, "stat": "def", "value": -12, "duration": Infinity, "statType": "flat", "detail": "敵のDEF減少" },
+          { "type": "buff", "target": "enemyRandom", "count": 2, "stat": "int", "value": -12, "duration": Infinity, "statType": "flat", "detail": "敵のINT減少" }
+        ],
+        "detail": "味方スキル発動試行時に反応"
+      }
+    ]
+  },
+  {
+    "id": "justice_heart",
+    "name": "マーク (Justice Heart)",
+    "trigger": "active",
+    "chance": 40,
+    "detail": "準備1T後、敵軍全体にATK DMG(300%)。自身のアクティブ発動率15%上昇。アクティブ発動毎にスタック(AGI上昇・威力上昇)。戦後無敵獲得。",
+    "prepTurns": 1,
+    "effects": [
+      { "type": "damage", "target": "enemyAll", "rate": 3.0, "basis": "atk", "scalingStat": "atk", "detail": "ATK300%ダメージ" },
+      { "type": "pounce_get", "target": "self", "value": 1, "detail": "通常攻撃回数を1回獲得" },
+      { "type": "buff", "target": "self", "stat": "activeRate", "value": 15, "duration": Infinity, "detail": "アクティブ発動率上昇" },
+      { "type": "stackBuff", "target": "self", "stat": "agi", "value": 15, "stackLimit": 12, "detail": "AGIスタックバフ" },
+      { "type": "stackBuff", "target": "self", "stat": "activeDmg", "value": 3, "stackLimit": 12, "detail": "アクティブ威力スタックバフ" }
+    ]
+  },
+  {
+    "id": "evolution_theory",
+    "name": "ダーウィン (Evolution Theory)",
+    "trigger": "engage",
+    "detail": "自軍通常攻撃/アクティブ発動後、確率でランダムなバフ1-2個獲得(戦闘終了まで)。",
+    "effects": [
+      {
+        "type": "register_hook",
+        "hookEvent": "onActionEnd",
+        "hookChance": 60,
+        "hookEffects": [
+          { 
+            "type": "evolve_buff", 
+            "detail": "通常攻撃またはアクティブ発動後、バフを獲得" 
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "berserker",
+    "name": "ゾノ (Berserker)",
+    "trigger": "passive",
+    "detail": "Crit率ダウン。行动後ランダム敌DMG2回。味方スキル発動時、確率で沈黙/武装解除。3ターン目以降、毎ターンDMG。",
+    "effects": [
+      { "type": "buff", "target": "self", "stat": "critRate", "value": -100, "duration": Infinity, "detail": " Crit率ダウン" },
+      {
+        "type": "register_hook",
+        "hookEvent": "onActionEnd",
+        "hookChance": 100,
+        "hookEffects": [
+          { "type": "damage", "target": "enemyRandom", "count": 2, "range": 3, "rate": 1.0, "basis": "atk", "scalingStat": "atk", "detail": "行動後DMG" },
+          { "type": "stackBuff", "target": "self", "stat": "frenzyDmg", "value": 70, "stackLimit": 6, "detail": "威力スタック" }
+        ]
+      },
+      {
+        "type": "register_hook",
+        "hookEvent": "onTurnStart",
+        "hookConditions": [ { "type": "turnEqual", "value": 3 } ],
+        "hookEffects": [
+          { "type": "damage", "target": "enemyRandom", "rate": 1.5, "basis": "atk", "scalingStat": "atk", "detail": "3ターン目以降DMG" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "famed_in_europe",
+    "name": "アッティラ (Famed in Europe)",
+    "trigger": "passive",
+    "detail": "Basic Attack拡散DMG(55%)。行動毎に Enemy Imprisonment 状態。enemyControlled状態時、確率で追加 Basic Attack。",
+    "effects": [
+      { "type": "stackBuff", "target": "self", "stat": "normalDmg", "value": 25, "stackLimit": 10, "detail": "通常攻撃威力スタック" },
+      {
+        "type": "register_hook",
+        "hookEvent": "onNormalAttack",
+        "hookEffects": [
+          { "type": "damage", "target": "nearbyEnemy", "rate": 0.55, "basis": "atk", "isSplash": true, "detail": "Splash DMG(55%)" }
+        ]
+      },
+      {
+        "type": "register_hook",
+        "hookEvent": "onActionStart",
+        "hookChance": 80,
+        "hookConditions": [ { "type": "isControlled", "value": true } ],
+        "hookEffects": [
+          { "type": "repro_act", "detail": " enemyControlled時、再行動" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "repair_defense",
+    "name": "修復防御",
+    "category": "active",
+    "trigger": "action",
+    "chance": 55,
+    "target": "allyLowestHp",
+    "effects": [
+      { "type": "heal", "rate": 2.5, "basis": "def", "scalingStat": "def", "detail": "兵力最低友軍を回復" },
+      { "type": "buff", "stat": "def", "value": 20, "duration": 3, "detail": "DEF増加" }
+    ]
+  },
+  {
+    "id": "budo",
+    "name": "文武両道",
+    "category": "active",
+    "trigger": "action",
+    "chance": 50,
+    "effects": [
+      { "type": "damage", "target": "enemyRandom", "count": 2, "rate": 1.8, "basis": "int", "scalingStat": "int", "detail": "敵2人に知力DMG" },
+      { "type": "debuff", "target": "enemyRandom", "count": 2, "stat": "damageDealPct", "value": -12, "duration": 2, "detail": "与DMG減少" }
+    ]
+  },
+  {
+    "id": "vampire",
+    "name": "吸血",
+    "category": "passive",
+    "trigger": "passive",
+    "detail": "与えた総ダメージ量の20%分自身を回復する。",
+    "effects": [
+      { "type": "buff", "stat": "lifestealPct", "value": 20, "duration": Infinity, "detail": "吸血状態を獲得" }
+    ]
+  },
+  {
+    "id": "zangeki",
+    "name": "斬撃",
+    "category": "active",
+    "trigger": "action",
+    "chance": 35,
+    "detail": "範囲内のランダム敵に対し DMG(75%)を2回。",
+    "effects": [
+      { "type": "damage", "target": "enemyRandom", "repeat": 2, "rate": 0.75, "basis": "atk", "scalingStat": "atk", "detail": "多段ATK DMG" }
+    ]
+  },
+  {
+    "id": "iron_guard",
+    "name": "鉄壁の守護",
+    "category": "engage",
+    "trigger": "engage",
+    "detail": "自軍ランダム2体、戦闘開始から2T DMG軽減(30%、知力依存)。",
+    "effects": [
+      { "type": "buff", "target": "allyRandom", "count": 2, "stat": "damageTakenPct", "value": -30, "duration": 2, "detail": "被DMG軽減獲得" }
+    ]
+  }
+]
