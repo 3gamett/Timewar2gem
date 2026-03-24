@@ -1,7 +1,7 @@
 const STORE = { 
-    heroes: 'tw.uni.heroes.v13', 
-    skills: 'tw.uni.skills.v13', 
-    teams: 'tw.uni.teams.v13' 
+    heroes: 'tw.uni.heroes.v14', 
+    skills: 'tw.uni.skills.v14', 
+    teams: 'tw.uni.teams.v14' 
 };
 
 let app = { 
@@ -13,7 +13,7 @@ let app = {
     currentSelectingSlot: null 
 };
 
-// --- Unitクラス ---
+// --- Unitクラス (属性増幅とステータス管理) ---
 class Unit {
     constructor(heroData, teamData, side, posIdx) {
         this.uid = `${side}_${posIdx}`;
@@ -24,10 +24,7 @@ class Unit {
         this.posLabel = ['指揮官', '中軍', '前衛'][posIdx];
         this.maxHp = Number(teamData.troops) || 10000;
         this.hp = this.maxHp;
-        
-        // ステータスが空でもNaNにならないよう保護
         this.baseStats = heroData.stats || { atk: 100, def: 100, int: 100, agi: 100, rng: 3 };
-        
         this.uniqueSkillId = heroData.unique;
         this.subSkillIds = (teamData.subSkills || []).slice(0, 2);
         this.buffs = [];
@@ -37,7 +34,7 @@ class Unit {
 
     isAlive() { return this.hp > 0; }
 
-    // 属性値の増幅計算 (Rule 15)
+    // Rule 15: 属性値の増幅計算
     getScaledStat(statName) {
         let base = Number(this.baseStats[statName]) || 0;
         let flatMod = this.buffs.filter(b => b.stat === statName).reduce((sum, b) => sum + b.value, 0);
@@ -120,6 +117,7 @@ class BattleEngine {
             if (this.turnIdx < this.turnOrder.length) {
                 this.unitAction(this.turnOrder[this.turnIdx++]);
             } else {
+                this.tickTurnEnd(); // ターン終了時の処理（永続フラグ対応）
                 this.turn++; this.viewTurn = this.turn; this.phase = 'action_start';
                 if (this.turn > 8) this.finish("8ターン経過による引き分け");
             }
@@ -130,7 +128,7 @@ class BattleEngine {
     unitAction(u) {
         if (!u.isAlive()) return;
         
-        // 【要望反映】兵力、負傷兵、4属性ステータスを出力
+        // 【詳細ログ出力】兵力、負傷兵、4属性ステータスを表示
         const atk = u.getCurrentStat('atk');
         const def = u.getCurrentStat('def');
         const int = u.getCurrentStat('int');
@@ -173,9 +171,20 @@ class BattleEngine {
                     t.hp += actual;
                     this.log(`  + ${t.name} が <span class="log-heal">${actual} 回復</span> (${context.skillName}) 残:${Math.round(t.hp)}`);
                 } else if (eff.type === 'buff' || eff.type === 'debuff') {
+                    // 方法3: -1を永続フラグとして登録
                     t.buffs.push({ stat: eff.stat, value: eff.value, duration: eff.duration });
                 }
             });
+        });
+    }
+
+    // ターン終了時のバフ減少処理 (方法3: -1は減らさない)
+    tickTurnEnd() {
+        this.units.forEach(u => {
+            u.buffs = u.buffs.map(b => (b.duration === -1 ? b : { ...b, duration: b.duration - 1 }))
+                            .filter(b => b.duration === -1 || b.duration > 0);
+            u.statuses = u.statuses.map(s => (s.duration === -1 ? s : { ...s, duration: s.duration - 1 }))
+                                  .filter(s => s.duration === -1 || s.duration > 0);
         });
     }
 
@@ -215,7 +224,9 @@ class BattleEngine {
 // 【復旧】入力欄をすべて表示する処理
 function renderTeams() {
     ['left', 'right'].forEach(side => {
-        document.getElementById(`${side}Slots`).innerHTML = app.teams[side].map((slot, i) => {
+        const container = document.getElementById(`${side}Slots`);
+        if(!container) return;
+        container.innerHTML = app.teams[side].map((slot, i) => {
             const h = app.heroes.find(x => x.id === slot.id);
             return `
             <div class="slot">
@@ -246,7 +257,7 @@ function updateSlot(side, idx, field, val) {
     localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
 }
 
-// 【重要】データのロードとエディタへの反映
+// データのロードとエディタへの強制反映
 async function loadData(force = false) {
     const localH = localStorage.getItem(STORE.heroes);
     const localS = localStorage.getItem(STORE.skills);
@@ -270,13 +281,14 @@ async function loadData(force = false) {
     if (localT) {
         app.teams = JSON.parse(localT);
     } else {
+        // 独立したオブジェクトを生成（fillバグの修正）
         app.teams = {
             left: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ],
             right: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ]
         };
     }
     
-    // 【修正】テキストエリアへの反映（これが抜けていたためJSON編集が壊れていました）
+    // テキストエリアへの初期反映
     const hJsonEl = document.getElementById('heroesJson');
     const sJsonEl = document.getElementById('skillsJson');
     if(hJsonEl) hJsonEl.value = JSON.stringify(app.heroes, null, 2);
@@ -299,24 +311,20 @@ function setupHandlers() {
     };
     document.getElementById('btnSyncFile').onclick = () => loadData(true);
     
-    // 【修正】保存ボタンのエラー保護
+    // 保存ボタンの連動強化
     document.getElementById('btnSaveHeroes').onclick = () => {
         try {
             app.heroes = JSON.parse(document.getElementById('heroesJson').value);
             localStorage.setItem(STORE.heroes, JSON.stringify(app.heroes));
-            renderTeams(); initViewers(); alert("英傑データを保存しました");
-        } catch (e) {
-            alert("英傑JSONの形式が正しくありません。\n" + e.message);
-        }
+            renderTeams(); initViewers(); alert("英傑データを保存・反映しました");
+        } catch (e) { alert("英傑JSONの形式が正しくありません。"); }
     };
     document.getElementById('btnSaveSkills').onclick = () => {
         try {
             app.skills = JSON.parse(document.getElementById('skillsJson').value);
             localStorage.setItem(STORE.skills, JSON.stringify(app.skills));
-            renderTeams(); initViewers(); alert("スキルデータを保存しました");
-        } catch (e) {
-            alert("スキルJSONの形式が正しくありません。\n" + e.message);
-        }
+            renderTeams(); initViewers(); alert("スキルデータを保存・反映しました");
+        } catch (e) { alert("スキルJSONの形式が正しくありません。"); }
     };
     
     document.getElementById('btnAuto').onclick = () => {
@@ -368,6 +376,7 @@ window.closeHeroModal = () => document.getElementById('heroModal').style.display
 function initViewers() {
     const hSel = document.getElementById('heroViewerSelect');
     const sSel = document.getElementById('skillViewerSelect');
+    if(!hSel || !sSel) return;
     hSel.innerHTML = '<option value="">英傑選択</option>' + app.heroes.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
     sSel.innerHTML = '<option value="">スキル選択</option>' + app.skills.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
     hSel.onchange = () => {
