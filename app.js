@@ -1,7 +1,7 @@
 const STORE = { 
-    heroes: 'tw.uni.heroes.v17', 
-    skills: 'tw.uni.skills.v17', 
-    teams: 'tw.uni.teams.v17' 
+    heroes: 'tw.uni.heroes.v18', 
+    skills: 'tw.uni.skills.v18', 
+    teams: 'tw.uni.teams.v18' 
 };
 
 let app = { heroes: [], skills: [], teams: null, battle: null, autoInterval: null, currentSelectingSlot: null };
@@ -19,25 +19,33 @@ class Unit {
         this.id = heroData.id;
         this.name = heroData.name;
         this.side = side;
-        this.posIdx = posIdx;
+        this.posIdx = posIdx; // 0:指揮官, 1:中軍, 2:前衛
         this.posLabel = ['指揮官', '中軍', '前衛'][posIdx];
         this.maxHp = Number(teamData.troops) || 10000;
         this.hp = this.maxHp;
         this.baseStats = heroData.stats || { atk: 100, def: 100, int: 100, agi: 100, rng: 3 };
         this.uniqueSkillId = heroData.unique;
         this.subSkillIds = (teamData.subSkills || []).slice(0, 2);
-        this.buffs = [];
-        this.statuses = [];
-        this.customState = { pounce: 1 }; 
+        this.buffs = []; // バフ、デバフ、制御効果を統合管理
+        this.customState = { pounce: 1, damageDealtCount: 0, hpDrop70: false }; 
     }
+    
     isAlive() { return this.hp > 0; }
+    
     getScaledStat(statName) {
+        if (statName === 'rng') return { value: this.baseStats.rng, multiplier: 1 }; // 射程は増幅の対象外
         let base = Number(this.baseStats[statName]) || 0;
         let flatMod = this.buffs.filter(b => b.stat === statName).reduce((sum, b) => sum + b.value, 0);
         let val = base + flatMod;
         return { value: Math.round(val), multiplier: 1 + (val / 50) * 0.1 };
     }
+    
     getCurrentStat(statName) { return this.getScaledStat(statName).value; }
+    
+    // 【新規】特定の状態異常（制御効果）を持っているか判定
+    hasStatus(statusName) {
+        return this.buffs.some(b => b.stat === statusName);
+    }
 }
 
 // --- 戦闘エンジン ---
@@ -64,21 +72,39 @@ class BattleEngine {
         addHtmlLog(msg);
     }
 
+    // 【新規】陣形における距離を計算する
+    // 指揮官=0, 中軍=1, 前衛=2。 前衛同士の距離は1。
+    getDistance(unitA, unitB) {
+        if (unitA.side === unitB.side) {
+            return Math.abs(unitA.posIdx - unitB.posIdx); // 味方同士の距離
+        } else {
+            const depthA = 3 - unitA.posIdx; // 前衛=1, 中軍=2, 指揮官=3
+            const depthB = 3 - unitB.posIdx;
+            return depthA + depthB - 1; // 前衛vs前衛なら 1+1-1=1
+        }
+    }
+
     registerAllSkills() {
         this.units.forEach(u => {
             const skillIds = [u.uniqueSkillId, ...u.subSkillIds].filter(Boolean);
             skillIds.forEach(id => {
                 const s = app.skills.find(x => x.id === id);
                 if (!s) return;
-                // エンゲージ（戦闘前処理）
                 if (s.trigger === 'passive' || s.trigger === 'engage') {
                     this.log(` ★ <span class="log-skill">[${s.name}]</span> 発動準備 (戦闘前)`);
-                    this.executeEffects(u, s.effects, { skillName: s.name });
+                    this.executeEffects(u, s.effects, { skillName: s.name, skillRange: s.range });
                 }
                 if (s.effects) {
                     s.effects.forEach(eff => {
                         if (eff.type === 'register_hook') {
-                            this.hooks.push({ event: eff.hookEvent, chance: eff.hookChance || 100, effects: eff.hookEffects, owner: u, skillName: s.name });
+                            this.hooks.push({ 
+                                event: eff.hookEvent, 
+                                chance: eff.hookChance || 100, 
+                                conditions: eff.hookConditions || [],
+                                effects: eff.hookEffects, 
+                                owner: u, 
+                                skillName: s.name 
+                            });
                         }
                     });
                 }
@@ -86,14 +112,27 @@ class BattleEngine {
         });
     }
 
-    // 抽選によるフック発動（不発ログを追加）
+    // フック発動（条件判定を追加）
     emit(eventName, context = {}) {
         this.hooks.filter(h => h.event === eventName).forEach(h => {
             if (!h.owner.isAlive()) return;
+            
+            // 【新規】複雑な発動条件のチェック (例: X回ダメージを与えた時)
+            if (h.conditions.length > 0) {
+                let pass = true;
+                for (let cond of h.conditions) {
+                    if (cond.type === 'dealDamageCountMod') {
+                        if (!context.count || context.count % cond.value !== 0) pass = false;
+                    }
+                    if (cond.type === 'isTargetSelf' && context.actor !== h.owner) pass = false;
+                }
+                if (!pass) return; // 条件不一致ならスキップ
+            }
+
             const chance = h.chance || 100;
             if (Math.random() * 100 < chance) {
                 this.executeEffects(h.owner, h.effects, { ...context, skillName: `${h.skillName} (追加効果)` });
-            } else {
+            } else if(chance < 100) {
                 this.log(`  <span class="log-muted">- [${h.skillName} の追加効果] は確率(${chance}%)により不発</span>`);
             }
         });
@@ -102,7 +141,6 @@ class BattleEngine {
     nextChunk() {
         if (this.finished) return;
         if (this.phase === 'opening') {
-            // Turn 0 の処理
             this.log(`<div class="log-turn-start" id="turn-mark-0">=== 戦闘前処理 (Turn 0) ===</div>`);
             this.emit('onBattleStart');
             this.phase = 'action_start'; this.turn = 1; this.viewTurn = 1;
@@ -133,25 +171,45 @@ class BattleEngine {
         const wounded = Math.max(0, u.maxHp - u.hp);
         this.log(`▼ [行動] ${u.side==='left'?'自':'敵'} <b>${u.name}</b> 兵力:${Math.round(u.hp)}(負傷:${Math.round(wounded)}) [A:${atk} D:${def} I:${int} S:${agi}]`);
 
-        // アクティブスキル（確率による不発ログを追加）
-        const actives = [u.uniqueSkillId, ...u.subSkillIds].map(id => app.skills.find(x => x.id === id)).filter(x => x && (x.trigger === 'active' || x.trigger === 'action'));
-        actives.forEach(skill => {
-            this.emit('onSkillAttempt', { actor: u, skill: skill });
-            const chance = skill.chance || 0;
-            if (Math.random() * 100 < chance) {
-                this.log(` ★ <span class="log-skill">[${skill.name}]</span> 発動！`);
-                this.executeEffects(u, skill.effects, { skillName: skill.name });
-            } else {
-                this.log(`  <span class="log-muted">- [${skill.name}] は確率(${chance}%)により不発</span>`);
-            }
-        });
-
-        const target = this.selectTargets(u, 'randomEnemy', 1)[0];
-        if (target) {
-            const dmg = this.calcDamage(u, target, 1.0, 'atk');
-            this.applyDamage(u, target, dmg, '通常攻撃');
-            this.emit('onNormalAttack', { actor: u, target: target });
+        // 【新規】行動阻害（眩暈・スタン）のチェック
+        if (u.hasStatus('stun') || u.hasStatus('眩暈')) {
+            this.log(`  <span class="log-damage">- ${u.name} は眩暈(スタン)のため行動できない！</span>`);
+            this.emit('onActionEnd', { actor: u });
+            return;
         }
+
+        // アクティブスキル（沈黙チェックを追加）
+        if (!u.hasStatus('silence') && !u.hasStatus('沈黙')) {
+            const actives = [u.uniqueSkillId, ...u.subSkillIds].map(id => app.skills.find(x => x.id === id)).filter(x => x && (x.trigger === 'active' || x.trigger === 'action'));
+            actives.forEach(skill => {
+                this.emit('onSkillAttempt', { actor: u, skill: skill });
+                const chance = skill.chance || 0;
+                if (Math.random() * 100 < chance) {
+                    this.log(` ★ <span class="log-skill">[${skill.name}]</span> 発動！`);
+                    this.executeEffects(u, skill.effects, { skillName: skill.name, skillRange: skill.range });
+                } else {
+                    this.log(`  <span class="log-muted">- [${skill.name}] は確率(${chance}%)により不発</span>`);
+                }
+            });
+        } else {
+            this.log(`  <span class="log-damage">- ${u.name} は沈黙のためスキルを発動できない！</span>`);
+        }
+
+        // 通常攻撃（武装解除と距離チェックを追加）
+        if (!u.hasStatus('disarm') && !u.hasStatus('武装解除')) {
+            const range = u.getCurrentStat('rng');
+            const target = this.selectTargets(u, 'randomEnemy', 1, range)[0];
+            if (target) {
+                const dmg = this.calcDamage(u, target, 1.0, 'atk');
+                this.applyDamage(u, target, dmg, '通常攻撃');
+                this.emit('onNormalAttack', { actor: u, target: target });
+            } else {
+                this.log(`  <span class="log-muted">- 射程内(距離${range})に通常攻撃の対象がいない！</span>`);
+            }
+        } else {
+            this.log(`  <span class="log-damage">- ${u.name} は武装解除のため通常攻撃できない！</span>`);
+        }
+
         this.checkDeaths();
         this.emit('onActionEnd', { actor: u });
     }
@@ -159,60 +217,96 @@ class BattleEngine {
     executeEffects(caster, effects, context) {
         if (!effects) return;
         effects.forEach(eff => {
-            const targets = this.selectTargets(caster, eff.target || 'randomEnemy', eff.count || 1);
+            // エフェクトごとに指定された距離、なければスキル距離、なければ無限
+            const effRange = eff.range || context.skillRange || 99;
+            const targets = this.selectTargets(caster, eff.target || 'randomEnemy', eff.count || 1, effRange);
+            
             targets.forEach(t => {
                 const scaling = caster.getScaledStat(eff.scalingStat || 'atk').multiplier;
+                
                 if (eff.type === 'damage') {
                     const dmg = this.calcDamage(caster, t, (eff.rate || 1) * scaling, eff.basis || 'atk');
                     this.applyDamage(caster, t, dmg, context.skillName);
+                
                 } else if (eff.type === 'heal') {
-                    const healBase = (145 * Math.log(Math.max(1, caster.hp)) - 900);
-                    const heal = Math.max(0, Math.round(healBase * (eff.rate || 1) * scaling));
-                    const actual = Math.min(t.maxHp - t.hp, heal);
-                    t.hp += actual;
-                    this.log(`  + ${t.name} が <span class="log-heal">${actual} 回復</span> (${context.skillName}) 残:${Math.round(t.hp)}`);
-                } else if (eff.type === 'buff' || eff.type === 'debuff' || eff.type === 'stackBuff') {
-                    // 詳細なバフ獲得ログ
+                    // 【新規】回復禁止チェック
+                    if (t.hasStatus('heal_block') || t.hasStatus('回復禁止')) {
+                        this.log(`  <span class="log-damage">- ${t.name} は回復禁止のため回復できない！</span>`);
+                    } else {
+                        const healBase = (145 * Math.log(Math.max(1, caster.hp)) - 900);
+                        const heal = Math.max(0, Math.round(healBase * (eff.rate || 1) * scaling));
+                        const actual = Math.min(t.maxHp - t.hp, heal);
+                        t.hp += actual;
+                        this.log(`  + ${t.name} が <span class="log-heal">${actual} 回復</span> (${context.skillName}) 残:${Math.round(t.hp)}`);
+                    }
+
+                } else if (eff.type === 'buff' || eff.type === 'debuff' || eff.type === 'stackBuff' || eff.type === 'control') {
+                    // 【新規】制御・バフ・デバフの統合付与
                     const durStr = eff.duration === -1 ? '永続' : `${eff.duration}ターン`;
                     const buffName = eff.detail || eff.stat || '状態変化';
-                    t.buffs.push({ stat: eff.stat, value: eff.value, duration: eff.duration, name: buffName });
-                    const color = (eff.type === 'debuff' || eff.value < 0) ? 'log-damage' : 'log-heal';
+                    const isDebuff = eff.type === 'debuff' || eff.value < 0;
+                    const isControl = eff.type === 'control' || ['stun','silence','disarm','heal_block','眩暈','沈黙','武装解除','回復禁止'].includes(eff.stat);
+                    
+                    t.buffs.push({ stat: eff.stat, value: eff.value || 0, duration: eff.duration, name: buffName, isDebuff: isDebuff, isControl: isControl });
+                    const color = (isDebuff || isControl) ? 'log-damage' : 'log-heal';
                     this.log(`  + ${t.name} は <span class="${color}">[${buffName}]</span> を獲得 (${durStr})`);
-                } else if (eff.type === 'evolve_buff') {
-                    // ダーウィンなどの特殊効果による獲得ログ
-                    const buffs = ['攻撃・知力クリティカル', 'スプラッシュ', '回避', '捕虜/離間', '無敵', '連撃', '回避無視', '先手'];
-                    const count = Math.random() < 0.5 ? 1 : 2;
-                    const picked = buffs.sort(() => 0.5 - Math.random()).slice(0, count);
-                    picked.forEach(b => {
-                        t.buffs.push({ stat: 'custom', value: b, duration: -1, name: b });
-                        this.log(`  + ${t.name} は進化により <span class="log-heal">[${b}]</span> を獲得 (永続)`);
+
+                } else if (eff.type === 'dispel') {
+                    // 【新規】浄化（デバフ・制御効果の解除）
+                    const beforeCount = t.buffs.length;
+                    t.buffs = t.buffs.filter(b => {
+                        if (eff.dispelType === 'debuff' && (b.isDebuff || b.value < 0)) return false;
+                        if (eff.dispelType === 'control' && b.isControl) return false;
+                        if (eff.dispelType === 'all' && (b.isDebuff || b.isControl || b.value < 0)) return false;
+                        return true;
                     });
+                    const removed = beforeCount - t.buffs.length;
+                    if(removed > 0) this.log(`  + ${t.name} のデバフ/制御効果が <span class="log-heal">${removed}個 浄化</span>された！`);
                 }
             });
         });
     }
 
-    // 消失時の詳細ログ
+    // 【新規】ダメージ適用・反撃・条件トリガーの統合
+    applyDamage(attacker, target, dmg, label) {
+        target.hp = Math.max(0, target.hp - dmg);
+        this.log(`  -> ${target.name} に <span class="log-damage">${dmg} ダメージ</span> (${label}) 残:${Math.round(target.hp)}`);
+        
+        // 条件トリガー: カウント
+        if(attacker) {
+            attacker.customState.damageDealtCount += 1;
+            this.emit('onDealDamage', { actor: attacker, target: target, count: attacker.customState.damageDealtCount });
+        }
+        
+        // 条件トリガー: HP低下
+        const hpPct = (target.hp / target.maxHp) * 100;
+        if (!target.customState.hpDrop70 && hpPct <= 70) {
+            target.customState.hpDrop70 = true;
+            this.emit('onHpDropBelow70', { actor: target });
+        }
+
+        // 被ダメージ時反撃フック
+        this.emit('onDamageReceived', { actor: target, attacker: attacker, damage: dmg });
+    }
+
     tickTurnEnd() {
         this.units.forEach(u => {
             u.buffs.forEach(b => {
                 if (b.duration === 1) this.log(`  <span class="log-muted">- ${u.name} の [${b.name}] の効果が切れた</span>`);
             });
             u.buffs = u.buffs.map(b => (b.duration === -1 ? b : { ...b, duration: b.duration - 1 })).filter(b => b.duration === -1 || b.duration > 0);
-            
-            u.statuses.forEach(s => {
-                if (s.duration === 1) this.log(`  <span class="log-muted">- ${u.name} の [${s.name}] の効果が切れた</span>`);
-            });
-            u.statuses = u.statuses.map(s => (s.duration === -1 ? s : { ...s, duration: s.duration - 1 })).filter(s => s.duration === -1 || s.duration > 0);
         });
     }
 
-    selectTargets(caster, type, count) {
-        const enemies = this.units.filter(u => u.side !== caster.side && u.isAlive());
-        const allies = this.units.filter(u => u.side === caster.side && u.isAlive());
+    // 【新規】距離(range)制限を適用したターゲット選択
+    selectTargets(caster, type, count, rangeLimit = 99) {
+        let enemies = this.units.filter(u => u.side !== caster.side && u.isAlive() && this.getDistance(caster, u) <= rangeLimit);
+        let allies = this.units.filter(u => u.side === caster.side && u.isAlive() && this.getDistance(caster, u) <= rangeLimit);
+
         if (type === 'randomEnemy' || type === 'enemyRandom') return enemies.sort(() => 0.5 - Math.random()).slice(0, count);
         if (type === 'self') return [caster];
         if (type === 'lowestHpAlly') return allies.sort((a,b) => a.hp - b.hp).slice(0, count);
+        if (type === 'lowestIntEnemy') return enemies.sort((a,b) => a.getCurrentStat('int') - b.getCurrentStat('int')).slice(0, count);
         return enemies.slice(0, count);
     }
 
@@ -221,11 +315,6 @@ class BattleEngine {
         const defVal = target.getCurrentStat('def');
         let dmg = (atkVal - defVal) * 1.5 + (attacker.hp / 100);
         return Math.max(1, Math.round(dmg * rate * (0.95 + Math.random() * 0.1)));
-    }
-
-    applyDamage(attacker, target, dmg, label) {
-        target.hp = Math.max(0, target.hp - dmg);
-        this.log(`  -> ${target.name} に <span class="log-damage">${dmg} ダメージ</span> (${label}) 残:${Math.round(target.hp)}`);
     }
 
     checkDeaths() {
@@ -317,7 +406,6 @@ async function loadData(force = false) {
     initViewers();
 }
 
-// 修正: ターン切り替え時に「そのターンの開始行」を完全に一番上へスクロールさせる
 function scrollToTurn(turn) {
     document.getElementById('currentTurnLabel').textContent = `Turn ${turn}`;
     const mark = document.getElementById(`turn-mark-${turn}`);
