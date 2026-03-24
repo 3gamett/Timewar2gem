@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>時空戦記 Universal Engine (GitHub Edition)</title>
+  <title>時空戦記 Universal Engine (Complete)</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -36,7 +36,6 @@
       </div>
       <div class="status-bar">
         <span id="turnBadge">Turn 0</span>
-        <span id="phaseBadge">-</span>
         <span id="stateBadge">待機中</span>
       </div>
       <div id="logArea" class="log-area"><div id="logContent">準備完了。</div></div>
@@ -74,15 +73,15 @@
   </main>
 
   <div id="heroModal" class="modal">
-    <div class=\"modal-content\">
-      <div class=\"modal-header\">
+    <div class="modal-content">
+      <div class="modal-header">
         <h2>英傑を選択</h2>
-        <button class=\"close-btn\" onclick=\"closeHeroModal()\">&times;</button>
+        <button class="close-btn" onclick="closeHeroModal()">&times;</button>
       </div>
-      <div id=\"heroGrid\" class=\"hero-grid\"></div>
+      <div id="heroGrid" class="hero-grid"></div>
     </div>
   </div>
 
-  <script src=\"app.js\"></script>
+  <script src="app.js"></script>
 </body>
 </html>

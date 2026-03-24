@@ -1,13 +1,17 @@
 const STORE = { 
-    heroes: 'tw.uni.heroes.v15', 
-    skills: 'tw.uni.skills.v15', 
-    teams: 'tw.uni.teams.v15' 
+    heroes: 'tw.uni.heroes.v16', 
+    skills: 'tw.uni.skills.v16', 
+    teams: 'tw.uni.teams.v16' 
 };
 
-let app = { 
-    heroes: [], skills: [], teams: null, battle: null, 
-    autoInterval: null, currentSelectingSlot: null 
-};
+let app = { heroes: [], skills: [], teams: null, battle: null, autoInterval: null, currentSelectingSlot: null };
+
+// 【復旧】グローバルエラーキャッチ (プログラムが落ちた時にログに赤字で出す)
+window.addEventListener('error', (e) => {
+    console.error(e);
+    const errHtml = `<div class="log-error">[システムエラー] ${e.message}</div>`;
+    addHtmlLog(errHtml);
+});
 
 // --- Unitクラス ---
 class Unit {
@@ -27,7 +31,6 @@ class Unit {
         this.statuses = [];
         this.customState = { pounce: 1 }; 
     }
-
     isAlive() { return this.hp > 0; }
     getScaledStat(statName) {
         let base = Number(this.baseStats[statName]) || 0;
@@ -59,7 +62,7 @@ class BattleEngine {
     log(msg) {
         if (!this.logsByTurn[this.turn]) this.logsByTurn[this.turn] = [];
         this.logsByTurn[this.turn].push(msg);
-        addHtmlLog(msg); // 常に画面に出力し続ける
+        addHtmlLog(msg);
     }
 
     registerAllSkills() {
@@ -68,16 +71,11 @@ class BattleEngine {
             skillIds.forEach(id => {
                 const s = app.skills.find(x => x.id === id);
                 if (!s) return;
-                if (s.trigger === 'passive' || s.trigger === 'engage') {
-                    this.executeEffects(u, s.effects, { skillName: s.name });
-                }
+                if (s.trigger === 'passive' || s.trigger === 'engage') this.executeEffects(u, s.effects, { skillName: s.name });
                 if (s.effects) {
                     s.effects.forEach(eff => {
                         if (eff.type === 'register_hook') {
-                            this.hooks.push({
-                                event: eff.hookEvent, chance: eff.hookChance || 100,
-                                effects: eff.hookEffects, owner: u, skillName: s.name
-                            });
+                            this.hooks.push({ event: eff.hookEvent, chance: eff.hookChance || 100, effects: eff.hookEffects, owner: u, skillName: s.name });
                         }
                     });
                 }
@@ -88,21 +86,17 @@ class BattleEngine {
     emit(eventName, context = {}) {
         this.hooks.filter(h => h.event === eventName).forEach(h => {
             if (!h.owner.isAlive()) return;
-            if (Math.random() * 100 < h.chance) {
-                this.executeEffects(h.owner, h.effects, { ...context, skillName: h.skillName });
-            }
+            if (Math.random() * 100 < h.chance) this.executeEffects(h.owner, h.effects, { ...context, skillName: h.skillName });
         });
     }
 
     nextChunk() {
         if (this.finished) return;
         if (this.phase === 'opening') {
-            // スクロール先の目印になる id (turn-mark-0) を付与
             this.log(`<div class="log-turn-start" id="turn-mark-0">=== 戦闘開始 ===</div>`);
             this.emit('onBattleStart');
             this.phase = 'action_start'; this.turn = 1; this.viewTurn = 1;
         } else if (this.phase === 'action_start') {
-            // 「開始」テキストに変更し、目印 id を付与
             this.log(`<div class="log-turn-start" id="turn-mark-${this.turn}">--- Turn ${this.turn} 開始 ---</div>`);
             document.getElementById('currentTurnLabel').textContent = `Turn ${this.turn}`;
             this.viewTurn = this.turn;
@@ -114,7 +108,6 @@ class BattleEngine {
                 this.unitAction(this.turnOrder[this.turnIdx++]);
             } else {
                 this.tickTurnEnd();
-                // ターン終了のテキストを追加
                 this.log(`<div class="log-turn-end">--- Turn ${this.turn} 終了 ---</div>`);
                 this.turn++; this.viewTurn = this.turn; this.phase = 'action_start';
                 if (this.turn > 8) this.finish("8ターン経過による引き分け");
@@ -172,6 +165,7 @@ class BattleEngine {
 
     tickTurnEnd() {
         this.units.forEach(u => {
+            // -1 は減らさず維持する (永続)
             u.buffs = u.buffs.map(b => (b.duration === -1 ? b : { ...b, duration: b.duration - 1 })).filter(b => b.duration === -1 || b.duration > 0);
             u.statuses = u.statuses.map(s => (s.duration === -1 ? s : { ...s, duration: s.duration - 1 })).filter(s => s.duration === -1 || s.duration > 0);
         });
@@ -204,11 +198,12 @@ class BattleEngine {
         if (leftCap && leftCap.hp <= 0) this.finish("敵軍の勝利！");
         else if (rightCap && rightCap.hp <= 0) this.finish("自軍の勝利！");
     }
-
     finish(msg) { this.finished = true; this.log(`<div class="log-turn-start" id="turn-mark-end">=== ${msg} ===</div>`); }
 }
 
 // --- UI制御 ---
+
+// 【復旧】常に描画される編成関数
 function renderTeams() {
     ['left', 'right'].forEach(side => {
         const container = document.getElementById(`${side}Slots`);
@@ -244,6 +239,7 @@ function updateSlot(side, idx, field, val) {
     localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
 }
 
+// 【復旧】エラーで止まらず、空データでも確実にUIを初期化する
 async function loadData(force = false) {
     const localH = localStorage.getItem(STORE.heroes);
     const localS = localStorage.getItem(STORE.skills);
@@ -257,93 +253,90 @@ async function loadData(force = false) {
             app.heroes = h || []; app.skills = s || [];
             localStorage.setItem(STORE.heroes, JSON.stringify(app.heroes));
             localStorage.setItem(STORE.skills, JSON.stringify(app.skills));
-        } catch(e) { console.error("Fetchエラー", e); }
+        } catch(e) { 
+            console.warn("外部JSONの取得に失敗しました。空の状態で起動します。");
+            app.heroes = []; app.skills = [];
+        }
     } else {
-        app.heroes = JSON.parse(localH);
-        app.skills = JSON.parse(localS);
+        try { app.heroes = JSON.parse(localH); } catch(e){ app.heroes = []; }
+        try { app.skills = JSON.parse(localS); } catch(e){ app.skills = []; }
     }
 
     const localT = localStorage.getItem(STORE.teams);
     if (localT) {
-        app.teams = JSON.parse(localT);
-    } else {
+        try { app.teams = JSON.parse(localT); } catch(e){ app.teams = null; }
+    }
+    
+    // データが存在しない（消去された）場合は、個別の空スロットを生成
+    if (!app.teams) {
         app.teams = {
             left: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ],
             right: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ]
         };
     }
     
+    // エディタへ強制反映
     const hJsonEl = document.getElementById('heroesJson');
     const sJsonEl = document.getElementById('skillsJson');
     if(hJsonEl) hJsonEl.value = JSON.stringify(app.heroes, null, 2);
     if(sJsonEl) sJsonEl.value = JSON.stringify(app.skills, null, 2);
 
+    // 取得に失敗していても必ずUIを描画する
     renderTeams(); 
     initViewers();
 }
 
-// 指定したターンの開始地点へスクロールする関数
+// ターン切り替えスクロール
 function scrollToTurn(turn) {
     document.getElementById('currentTurnLabel').textContent = `Turn ${turn}`;
     const mark = document.getElementById(`turn-mark-${turn}`);
     const area = document.getElementById('logArea');
     if (mark && area) {
-        area.scrollTo({
-            top: mark.offsetTop - area.offsetTop,
-            behavior: 'smooth'
-        });
+        area.scrollTo({ top: mark.offsetTop - area.offsetTop, behavior: 'smooth' });
     }
 }
 
 function setupHandlers() {
     document.getElementById('btnStart').onclick = () => {
-        document.getElementById('logContent').innerHTML = '';
-        app.battle = new BattleEngine(JSON.parse(JSON.stringify(app.teams)));
-        app.battle.nextChunk();
+        try {
+            document.getElementById('logContent').innerHTML = '';
+            app.battle = new BattleEngine(JSON.parse(JSON.stringify(app.teams)));
+            app.battle.nextChunk();
+        } catch(e) { throw new Error("戦闘開始時にエラーが発生しました: " + e.message); }
     };
     document.getElementById('btnNext').onclick = () => { if(app.battle) app.battle.nextChunk(); };
     
-    // スクロール操作への切り替え
     document.getElementById('btnPrevTurn').onclick = () => {
-        if (app.battle && app.battle.viewTurn > 0) {
-            app.battle.viewTurn--;
-            scrollToTurn(app.battle.viewTurn);
-        }
+        if (app.battle && app.battle.viewTurn > 0) scrollToTurn(--app.battle.viewTurn);
     };
     document.getElementById('btnNextTurn').onclick = () => {
-        if (app.battle && app.battle.viewTurn < app.battle.turn && app.battle.viewTurn < 8) {
-            app.battle.viewTurn++;
-            scrollToTurn(app.battle.viewTurn);
-        }
+        if (app.battle && app.battle.viewTurn < app.battle.turn && app.battle.viewTurn < 8) scrollToTurn(++app.battle.viewTurn);
     };
 
     document.getElementById('btnClearLog').onclick = () => document.getElementById('logContent').innerHTML = '';
-    document.getElementById('btnCopyLog').onclick = () => {
-        navigator.clipboard.writeText(document.getElementById('logContent').innerText).then(() => alert("ログをコピーしました"));
-    };
+    document.getElementById('btnCopyLog').onclick = () => navigator.clipboard.writeText(document.getElementById('logContent').innerText).then(() => alert("ログをコピーしました"));
     document.getElementById('btnSyncFile').onclick = () => loadData(true);
     
+    // 【復旧】詳細なJSONエラー通知
     document.getElementById('btnSaveHeroes').onclick = () => {
         try {
             app.heroes = JSON.parse(document.getElementById('heroesJson').value);
             localStorage.setItem(STORE.heroes, JSON.stringify(app.heroes));
             renderTeams(); initViewers(); alert("英傑データを保存・反映しました");
-        } catch (e) { alert("英傑JSONの形式が正しくありません。"); }
+        } catch (e) { alert("【エラー】英傑JSONの形式が間違っています。\n\n詳細: " + e.message); }
     };
     document.getElementById('btnSaveSkills').onclick = () => {
         try {
             app.skills = JSON.parse(document.getElementById('skillsJson').value);
             localStorage.setItem(STORE.skills, JSON.stringify(app.skills));
             renderTeams(); initViewers(); alert("スキルデータを保存・反映しました");
-        } catch (e) { alert("スキルJSONの形式が正しくありません。"); }
+        } catch (e) { alert("【エラー】スキルJSONの形式が間違っています。\n\n詳細: " + e.message); }
     };
     
     document.getElementById('btnAuto').onclick = () => {
         if (app.autoInterval) return;
         app.autoInterval = setInterval(() => {
-            if (!app.battle || app.battle.finished) {
-                clearInterval(app.autoInterval); app.autoInterval = null; return;
-            }
+            if (!app.battle || app.battle.finished) { clearInterval(app.autoInterval); app.autoInterval = null; return; }
             app.battle.nextChunk();
         }, 500);
     };
@@ -355,8 +348,6 @@ function addHtmlLog(html) {
     const div = document.createElement('div');
     div.className = 'log-entry'; div.innerHTML = html;
     content.appendChild(div);
-    const area = document.getElementById('logArea');
-    area.scrollTop = area.scrollHeight;
 }
 
 function updateStatusDisplay() {
@@ -399,4 +390,3 @@ function initViewers() {
         document.getElementById('skillViewerDetail').textContent = s ? `${s.name}\n${s.detail || ""}` : "";
     };
 }
-
