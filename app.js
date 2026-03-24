@@ -1,7 +1,7 @@
 const STORE = { 
-    heroes: 'tw.uni.heroes.v19', 
-    skills: 'tw.uni.skills.v19', 
-    teams: 'tw.uni.teams.v19' 
+    heroes: 'tw.uni.heroes.v18', 
+    skills: 'tw.uni.skills.v18', 
+    teams: 'tw.uni.teams.v18' 
 };
 
 let app = { heroes: [], skills: [], teams: null, battle: null, autoInterval: null, currentSelectingSlot: null };
@@ -26,30 +26,25 @@ class Unit {
         this.baseStats = heroData.stats || { atk: 100, def: 100, int: 100, agi: 100, rng: 3 };
         this.uniqueSkillId = heroData.unique;
         this.subSkillIds = (teamData.subSkills || []).slice(0, 2);
-        this.buffs = []; // バフ、デバフ、制御、DoTを統合管理
+        this.buffs = []; // バフ、デバフ、制御効果を統合管理
         this.customState = { pounce: 1, damageDealtCount: 0, hpDrop70: false }; 
     }
     
     isAlive() { return this.hp > 0; }
     
     getScaledStat(statName) {
-        if (statName === 'rng') return { value: this.baseStats.rng, multiplier: 1 };
+        if (statName === 'rng') return { value: this.baseStats.rng, multiplier: 1 }; // 射程は増幅の対象外
         let base = Number(this.baseStats[statName]) || 0;
-        let flatMod = this.buffs.filter(b => b.stat === statName && b.type !== 'dot').reduce((sum, b) => sum + b.value, 0);
+        let flatMod = this.buffs.filter(b => b.stat === statName).reduce((sum, b) => sum + b.value, 0);
         let val = base + flatMod;
         return { value: Math.round(val), multiplier: 1 + (val / 50) * 0.1 };
     }
     
     getCurrentStat(statName) { return this.getScaledStat(statName).value; }
     
-    hasStatus(statusName) { return this.buffs.some(b => b.stat === statusName); }
-
-    // 【新規】割合ダメージ増減の取得 (Rule 2 対応)
-    getDamageDealMod() {
-        return this.buffs.filter(b => b.stat === 'damage_deal_pct' || b.stat === '与ダメージ').reduce((sum, b) => sum + b.value, 0);
-    }
-    getDamageTakeMod() {
-        return this.buffs.filter(b => b.stat === 'damage_take_pct' || b.stat === '被ダメージ').reduce((sum, b) => sum + b.value, 0);
+    // 【新規】特定の状態異常（制御効果）を持っているか判定
+    hasStatus(statusName) {
+        return this.buffs.some(b => b.stat === statusName);
     }
 }
 
@@ -77,13 +72,15 @@ class BattleEngine {
         addHtmlLog(msg);
     }
 
+    // 【新規】陣形における距離を計算する
+    // 指揮官=0, 中軍=1, 前衛=2。 前衛同士の距離は1。
     getDistance(unitA, unitB) {
         if (unitA.side === unitB.side) {
-            return Math.abs(unitA.posIdx - unitB.posIdx);
+            return Math.abs(unitA.posIdx - unitB.posIdx); // 味方同士の距離
         } else {
-            const depthA = 3 - unitA.posIdx;
+            const depthA = 3 - unitA.posIdx; // 前衛=1, 中軍=2, 指揮官=3
             const depthB = 3 - unitB.posIdx;
-            return depthA + depthB - 1;
+            return depthA + depthB - 1; // 前衛vs前衛なら 1+1-1=1
         }
     }
 
@@ -115,27 +112,21 @@ class BattleEngine {
         });
     }
 
-    // フック発動（【新規】陣形・ターン制限条件の追加）
+    // フック発動（条件判定を追加）
     emit(eventName, context = {}) {
         this.hooks.filter(h => h.event === eventName).forEach(h => {
             if (!h.owner.isAlive()) return;
             
+            // 【新規】複雑な発動条件のチェック (例: X回ダメージを与えた時)
             if (h.conditions.length > 0) {
                 let pass = true;
                 for (let cond of h.conditions) {
-                    if (cond.type === 'dealDamageCountMod' && (!context.count || context.count % cond.value !== 0)) pass = false;
-                    if (cond.type === 'isTargetSelf' && context.actor !== h.owner) pass = false;
-                    
-                    // 【新規】陣形配置条件 (Rule 4 対応) -> value: [1, 2] (中軍・前衛など)
-                    if (cond.type === 'position') {
-                        const posArray = Array.isArray(cond.value) ? cond.value : [cond.value];
-                        if (!posArray.includes(h.owner.posIdx)) pass = false;
+                    if (cond.type === 'dealDamageCountMod') {
+                        if (!context.count || context.count % cond.value !== 0) pass = false;
                     }
-                    
-                    // 【新規】ターン制限条件 (Rule 5 対応) -> value: 3 (3ターンの間)
-                    if (cond.type === 'turnLimit' && this.turn > cond.value) pass = false;
+                    if (cond.type === 'isTargetSelf' && context.actor !== h.owner) pass = false;
                 }
-                if (!pass) return;
+                if (!pass) return; // 条件不一致ならスキップ
             }
 
             const chance = h.chance || 100;
@@ -157,10 +148,6 @@ class BattleEngine {
             this.log(`<div class="log-turn-start" id="turn-mark-${this.turn}">--- Turn ${this.turn} 開始 ---</div>`);
             document.getElementById('currentTurnLabel').textContent = `Turn ${this.turn}`;
             this.viewTurn = this.turn;
-            
-            // 【新規】毎ターン開始時のフック発動 (Rule 5 対応)
-            this.emit('onTurnStart');
-
             this.turnOrder = this.units.filter(u => u.isAlive()).sort((a,b) => b.getCurrentStat('agi') - a.getCurrentStat('agi'));
             this.turnIdx = 0; this.phase = 'action';
             this.nextChunk();
@@ -184,12 +171,14 @@ class BattleEngine {
         const wounded = Math.max(0, u.maxHp - u.hp);
         this.log(`▼ [行動] ${u.side==='left'?'自':'敵'} <b>${u.name}</b> 兵力:${Math.round(u.hp)}(負傷:${Math.round(wounded)}) [A:${atk} D:${def} I:${int} S:${agi}]`);
 
+        // 【新規】行動阻害（眩暈・スタン）のチェック
         if (u.hasStatus('stun') || u.hasStatus('眩暈')) {
             this.log(`  <span class="log-damage">- ${u.name} は眩暈(スタン)のため行動できない！</span>`);
             this.emit('onActionEnd', { actor: u });
             return;
         }
 
+        // アクティブスキル（沈黙チェックを追加）
         if (!u.hasStatus('silence') && !u.hasStatus('沈黙')) {
             const actives = [u.uniqueSkillId, ...u.subSkillIds].map(id => app.skills.find(x => x.id === id)).filter(x => x && (x.trigger === 'active' || x.trigger === 'action'));
             actives.forEach(skill => {
@@ -206,29 +195,17 @@ class BattleEngine {
             this.log(`  <span class="log-damage">- ${u.name} は沈黙のためスキルを発動できない！</span>`);
         }
 
+        // 通常攻撃（武装解除と距離チェックを追加）
         if (!u.hasStatus('disarm') && !u.hasStatus('武装解除')) {
             const range = u.getCurrentStat('rng');
-            
-            // 通常攻撃を関数化し、連撃時に再利用可能にする
-            const performNormalAttack = (isDouble = false) => {
-                const target = this.selectTargets(u, 'randomEnemy', 1, range)[0];
-                if (target) {
-                    const dmg = this.calcDamage(u, target, 1.0, 'atk');
-                    this.applyDamage(u, target, dmg, isDouble ? '通常攻撃 (連撃)' : '通常攻撃');
-                    this.emit('onNormalAttack', { actor: u, target: target });
-                } else {
-                    this.log(`  <span class="log-muted">- 射程内(距離${range})に通常攻撃の対象がいない！</span>`);
-                }
-            };
-
-            performNormalAttack(false);
-
-            // 【新規】連撃 (Double Attack) の処理 (Rule 1 対応)
-            if (u.hasStatus('double_attack') || u.hasStatus('連撃')) {
-                this.log(` ★ <span class="log-skill">[連撃]</span> 発動！ 追加行動を行います。`);
-                performNormalAttack(true);
+            const target = this.selectTargets(u, 'randomEnemy', 1, range)[0];
+            if (target) {
+                const dmg = this.calcDamage(u, target, 1.0, 'atk');
+                this.applyDamage(u, target, dmg, '通常攻撃');
+                this.emit('onNormalAttack', { actor: u, target: target });
+            } else {
+                this.log(`  <span class="log-muted">- 射程内(距離${range})に通常攻撃の対象がいない！</span>`);
             }
-
         } else {
             this.log(`  <span class="log-damage">- ${u.name} は武装解除のため通常攻撃できない！</span>`);
         }
@@ -240,6 +217,7 @@ class BattleEngine {
     executeEffects(caster, effects, context) {
         if (!effects) return;
         effects.forEach(eff => {
+            // エフェクトごとに指定された距離、なければスキル距離、なければ無限
             const effRange = eff.range || context.skillRange || 99;
             const targets = this.selectTargets(caster, eff.target || 'randomEnemy', eff.count || 1, effRange);
             
@@ -251,6 +229,7 @@ class BattleEngine {
                     this.applyDamage(caster, t, dmg, context.skillName);
                 
                 } else if (eff.type === 'heal') {
+                    // 【新規】回復禁止チェック
                     if (t.hasStatus('heal_block') || t.hasStatus('回復禁止')) {
                         this.log(`  <span class="log-damage">- ${t.name} は回復禁止のため回復できない！</span>`);
                     } else {
@@ -261,25 +240,19 @@ class BattleEngine {
                         this.log(`  + ${t.name} が <span class="log-heal">${actual} 回復</span> (${context.skillName}) 残:${Math.round(t.hp)}`);
                     }
 
-                } else if (eff.type === 'dot') {
-                    // 【新規】持続ダメージ (DoT) の付与 (Rule 3 対応)
-                    const dmg = this.calcDamage(caster, t, (eff.rate || 1) * scaling, eff.basis || 'int');
-                    const durStr = eff.duration === -1 ? '永続' : `${eff.duration}ターン`;
-                    const buffName = eff.detail || eff.stat || '持続ダメージ';
-                    t.buffs.push({ type: 'dot', stat: eff.stat, value: dmg, duration: eff.duration, name: buffName, isDebuff: true, isControl: false });
-                    this.log(`  + ${t.name} は <span class="log-damage">[${buffName}]</span> 状態になった (${dmg}ダメージ/ターン, ${durStr})`);
-
                 } else if (eff.type === 'buff' || eff.type === 'debuff' || eff.type === 'stackBuff' || eff.type === 'control') {
+                    // 【新規】制御・バフ・デバフの統合付与
                     const durStr = eff.duration === -1 ? '永続' : `${eff.duration}ターン`;
                     const buffName = eff.detail || eff.stat || '状態変化';
                     const isDebuff = eff.type === 'debuff' || eff.value < 0;
                     const isControl = eff.type === 'control' || ['stun','silence','disarm','heal_block','眩暈','沈黙','武装解除','回復禁止'].includes(eff.stat);
                     
-                    t.buffs.push({ type: eff.type, stat: eff.stat, value: eff.value || 0, duration: eff.duration, name: buffName, isDebuff: isDebuff, isControl: isControl });
+                    t.buffs.push({ stat: eff.stat, value: eff.value || 0, duration: eff.duration, name: buffName, isDebuff: isDebuff, isControl: isControl });
                     const color = (isDebuff || isControl) ? 'log-damage' : 'log-heal';
                     this.log(`  + ${t.name} は <span class="${color}">[${buffName}]</span> を獲得 (${durStr})`);
 
                 } else if (eff.type === 'dispel') {
+                    // 【新規】浄化（デバフ・制御効果の解除）
                     const beforeCount = t.buffs.length;
                     t.buffs = t.buffs.filter(b => {
                         if (eff.dispelType === 'debuff' && (b.isDebuff || b.value < 0)) return false;
@@ -294,45 +267,38 @@ class BattleEngine {
         });
     }
 
+    // 【新規】ダメージ適用・反撃・条件トリガーの統合
     applyDamage(attacker, target, dmg, label) {
-        if (!target.isAlive()) return; // 死亡者への追撃防止
         target.hp = Math.max(0, target.hp - dmg);
         this.log(`  -> ${target.name} に <span class="log-damage">${dmg} ダメージ</span> (${label}) 残:${Math.round(target.hp)}`);
         
+        // 条件トリガー: カウント
         if(attacker) {
             attacker.customState.damageDealtCount += 1;
             this.emit('onDealDamage', { actor: attacker, target: target, count: attacker.customState.damageDealtCount });
         }
         
+        // 条件トリガー: HP低下
         const hpPct = (target.hp / target.maxHp) * 100;
         if (!target.customState.hpDrop70 && hpPct <= 70) {
             target.customState.hpDrop70 = true;
             this.emit('onHpDropBelow70', { actor: target });
         }
 
-        if(attacker) {
-            this.emit('onDamageReceived', { actor: target, attacker: attacker, damage: dmg });
-        }
+        // 被ダメージ時反撃フック
+        this.emit('onDamageReceived', { actor: target, attacker: attacker, damage: dmg });
     }
 
     tickTurnEnd() {
         this.units.forEach(u => {
-            if (!u.isAlive()) return;
-
-            // 【新規】持続ダメージ (DoT) の処理 (Rule 3 対応)
-            const dots = u.buffs.filter(b => b.type === 'dot');
-            dots.forEach(dot => {
-                this.applyDamage(null, u, dot.value, `${dot.name} (持続ダメージ)`);
-            });
-
             u.buffs.forEach(b => {
                 if (b.duration === 1) this.log(`  <span class="log-muted">- ${u.name} の [${b.name}] の効果が切れた</span>`);
             });
             u.buffs = u.buffs.map(b => (b.duration === -1 ? b : { ...b, duration: b.duration - 1 })).filter(b => b.duration === -1 || b.duration > 0);
         });
-        this.checkDeaths(); // DoTによる死亡判定
     }
 
+    // 【新規】距離(range)制限を適用したターゲット選択
     selectTargets(caster, type, count, rangeLimit = 99) {
         let enemies = this.units.filter(u => u.side !== caster.side && u.isAlive() && this.getDistance(caster, u) <= rangeLimit);
         let allies = this.units.filter(u => u.side === caster.side && u.isAlive() && this.getDistance(caster, u) <= rangeLimit);
@@ -344,25 +310,11 @@ class BattleEngine {
         return enemies.slice(0, count);
     }
 
-    // 【新規】割合ダメージ増減の適用 (Rule 2 対応)
     calcDamage(attacker, target, rate, basis) {
-        const atkVal = attacker ? attacker.getCurrentStat(basis) : 0;
+        const atkVal = attacker.getCurrentStat(basis);
         const defVal = target.getCurrentStat('def');
-        
-        let dmg = (atkVal - defVal) * 1.5;
-        if (attacker) dmg += (attacker.hp / 100);
-        
-        let baseDmg = Math.max(1, Math.round(dmg * rate * (0.95 + Math.random() * 0.1)));
-
-        // 与ダメージ・被ダメージの割合増減バフを計算
-        let dealMod = 1.0;
-        if (attacker) dealMod += (attacker.getDamageDealMod() / 100);
-        let takeMod = 1.0 + (target.getDamageTakeMod() / 100); // マイナスなら軽減される
-
-        // 増減率が極端にマイナスになった場合でも最低保証ダメージ(0.1倍)を残す
-        let finalDmg = baseDmg * Math.max(0.1, dealMod) * Math.max(0.1, takeMod);
-        
-        return Math.max(1, Math.round(finalDmg));
+        let dmg = (atkVal - defVal) * 1.5 + (attacker.hp / 100);
+        return Math.max(1, Math.round(dmg * rate * (0.95 + Math.random() * 0.1)));
     }
 
     checkDeaths() {
