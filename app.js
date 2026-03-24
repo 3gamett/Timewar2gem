@@ -6,7 +6,6 @@ const STORE = {
 
 let app = { heroes: [], skills: [], teams: null, battle: null, autoInterval: null, currentSelectingSlot: null };
 
-// グローバルエラーキャッチ (欠落防止)
 window.addEventListener('error', (e) => {
     console.error(e);
     addHtmlLog(`<div class="log-error">[システムエラー] ${e.message}</div>`);
@@ -19,495 +18,606 @@ class Unit {
         this.id = heroData.id;
         this.name = heroData.name;
         this.side = side;
-        this.posIdx = posIdx; // 0:指揮官, 1:中軍, 2:前衛
+        this.posIdx = posIdx; 
         this.posLabel = ['指揮官', '中軍', '前衛'][posIdx];
         this.maxHp = Number(teamData.troops) || 10000;
         this.hp = this.maxHp;
         this.baseStats = heroData.stats || { atk: 100, def: 100, int: 100, agi: 100, rng: 3 };
+        this.troopType = heroData.troopType || 'infantry'; 
         this.uniqueSkillId = heroData.unique;
         this.subSkillIds = (teamData.subSkills || []).slice(0, 2);
-        this.buffs = []; // バフ、デバフ、制御効果を統合管理
-        this.customState = { pounce: 1, damageDealtCount: 0, hpDrop70: false }; 
+        
+        this.buffs = [];
+        
+        // --- 追加: デバフ解除や特殊状態の管理 ---
+        this.states = {
+            isDead: false,
+            disoriented: false, 
+            silenced: false,    
+            exhausted: false,   
+            healBlocked: false, 
+            firstStrike: false, 
+            doubleAttack: false,
+            ignoreEvasion: false,
+            invincible: false,  // 無敵（制御効果・ダメージ無効化など）
+        };
+
+        // --- 追加: スキルごとの発動回数や蓄積のカウンター ---
+        this.customCounters = {}; 
+        
+        // --- 追加: HP閾値イベントの発生済みフラグ管理 ---
+        this.hpThresholdsTriggered = new Set();
     }
-    
-    isAlive() { return this.hp > 0; }
-    
-    getScaledStat(statName) {
-        if (statName === 'rng') return { value: this.baseStats.rng, multiplier: 1 }; // 射程は増幅の対象外
-        let base = Number(this.baseStats[statName]) || 0;
-        let flatMod = this.buffs.filter(b => b.stat === statName).reduce((sum, b) => sum + b.value, 0);
-        let val = base + flatMod;
-        return { value: Math.round(val), multiplier: 1 + (val / 50) * 0.1 };
+
+    get isAlive() {
+        return this.hp > 0 && !this.states.isDead;
     }
-    
-    getCurrentStat(statName) { return this.getScaledStat(statName).value; }
-    
-    // 【新規】特定の状態異常（制御効果）を持っているか判定
-    hasStatus(statusName) {
-        return this.buffs.some(b => b.stat === statusName);
+
+    get wounded() {
+        return this.maxHp - this.hp;
+    }
+
+    getStat(statName) {
+        let val = this.baseStats[statName] || 0;
+        // バフからのステータス増減を反映する処理（簡易版）
+        const statBuffs = this._getBuffSum(`${statName}_bonus`);
+        const statMultipliers = this._getBuffSum(`${statName}_multiplier`);
+        return (val + statBuffs) * (1 + statMultipliers);
+    }
+
+    _getBuffSum(key) {
+        return this.buffs.filter(b => b[key]).reduce((sum, b) => sum + b[key], 0);
+    }
+
+    // --- 追加: バフ付与メソッド（スタック上限の管理） ---
+    addBuff(buff) {
+        const existingBuffs = this.buffs.filter(b => b.id === buff.id);
+        const maxStacks = buff.maxStacks || 1; // デフォルトは重複不可(1)
+
+        if (existingBuffs.length >= maxStacks) {
+            // スタック上限に達している場合は、最も古いものを削除して新しいものを入れる
+            const oldestIndex = this.buffs.findIndex(b => b.id === buff.id);
+            if(oldestIndex !== -1) {
+                this.buffs.splice(oldestIndex, 1);
+            }
+        }
+        this.buffs.push(buff);
+    }
+
+    // --- 追加: イベントフックの発火 ---
+    triggerHook(eventName, context) {
+        if (!app.battle) return;
+        app.battle.handleEventHook(this, eventName, context);
+    }
+
+    // --- 改修: 被ダメージ処理の拡張（クリティカル、回避、スプラッシュ、HP閾値、反撃フック） ---
+    takeDamage(amount, sourceUnit, dmgType, context = {}) {
+        if (this.states.isDead) return 0;
+        if (sourceUnit && sourceUnit.states.exhausted) return 0;
+        
+        // 無敵状態の判定
+        if (this.states.invincible && context.isControlEffect) return 0;
+
+        let finalDamage = amount;
+
+        // 回避の判定 (sourceUnitが回避無視を持っていなければ)
+        const evasionRate = this._getBuffSum('evasion_rate'); 
+        if (evasionRate > 0 && !(sourceUnit && sourceUnit.states.ignoreEvasion)) {
+            if (Math.random() < evasionRate) {
+                app.battle.log(`${this.name} は攻撃を回避した！`);
+                return 0;
+            }
+        }
+
+        // クリティカルの判定
+        if (sourceUnit) {
+            const critRate = sourceUnit._getBuffSum(`${dmgType}_crit_rate`);
+            if (Math.random() < critRate) {
+                finalDamage *= 1.5; // クリティカルダメージ倍率（1.5倍）
+                app.battle.log(`【クリティカル】${sourceUnit.name} の攻撃が急所に命中！`);
+            }
+        }
+
+        const actualDamage = Math.min(this.hp, Math.floor(finalDamage));
+        this.hp -= actualDamage;
+
+        if (this.hp <= 0) {
+            this.hp = 0;
+            this.states.isDead = true;
+            app.battle.log(`💀 ${this.name} は撤退した。`);
+        }
+
+        // HP閾値のチェック（例: 70%）
+        const hpRatio = this.hp / this.maxHp;
+        if (hpRatio <= 0.70 && !this.hpThresholdsTriggered.has('70_percent')) {
+            this.hpThresholdsTriggered.add('70_percent');
+            this.triggerHook('on_hp_threshold_crossed', { threshold: 70 });
+        }
+
+        // 被ダメージ時フック（ゼノビア「パルメラの抵抗」などの発動トリガー）
+        this.triggerHook('on_damage_taken', { sourceUnit, amount: actualDamage, dmgType });
+
+        // スプラッシュダメージの処理（波及効果）
+        if (sourceUnit && !context.isSplash) {
+            const splashRate = sourceUnit._getBuffSum('splash_rate');
+            if (splashRate > 0) {
+                app.battle.applySplashDamage(this, actualDamage * splashRate, sourceUnit, dmgType);
+            }
+        }
+
+        return actualDamage;
+    }
+
+    heal(amount) {
+        if (this.states.isDead || this.states.healBlocked) return 0;
+        const actualHeal = Math.min(this.maxHp - this.hp, Math.floor(amount));
+        this.hp += actualHeal;
+        return actualHeal;
     }
 }
 
-// --- 戦闘エンジン ---
-class BattleEngine {
+// --- Battleクラス ---
+class Battle {
     constructor(teams) {
-        this.turn = 0; this.viewTurn = 0; this.phase = 'opening';
-        this.logsByTurn = { 0: [] }; this.finished = false;
-        this.hooks = [];
-        this.units = [
-            ...teams.left.map((t, i) => this.createUnit(t, 'left', i)),
-            ...teams.right.map((t, i) => this.createUnit(t, 'right', i))
-        ].filter(Boolean);
-        this.registerAllSkills();
-    }
+        this.turn = 0;
+        this.maxTurn = 8;
+        this.logs = [];
+        this.units = [];
+        this.isFinished = false;
 
-    createUnit(slot, side, idx) {
-        const h = app.heroes.find(h => h.id === slot.id);
-        return h ? new Unit(h, slot, side, idx) : null;
+        ['left', 'right'].forEach(side => {
+            teams[side].forEach((t, i) => {
+                const heroData = app.heroes.find(h => h.id === t.id);
+                if (heroData) {
+                    this.units.push(new Unit(heroData, t, side, i));
+                }
+            });
+        });
     }
 
     log(msg) {
-        if (!this.logsByTurn[this.turn]) this.logsByTurn[this.turn] = [];
-        this.logsByTurn[this.turn].push(msg);
-        addHtmlLog(msg);
+        this.logs.push(`[Turn ${this.turn}] ${msg}`);
+        addHtmlLog(`<div>[Turn ${this.turn}] ${msg}</div>`);
     }
 
-    // 【新規】陣形における距離を計算する
-    // 指揮官=0, 中軍=1, 前衛=2。 前衛同士の距離は1。
-    getDistance(unitA, unitB) {
-        if (unitA.side === unitB.side) {
-            return Math.abs(unitA.posIdx - unitB.posIdx); // 味方同士の距離
-        } else {
-            const depthA = 3 - unitA.posIdx; // 前衛=1, 中軍=2, 指揮官=3
-            const depthB = 3 - unitB.posIdx;
-            return depthA + depthB - 1; // 前衛vs前衛なら 1+1-1=1
+    handleEventHook(unit, eventName, context) {
+        // パッシブスキルなどで特定のトリガーに反応するロジックをここに集約
+        // 例: unitが持っているスキル群の中に、eventNameに反応するものがあれば実行
+        unit.buffs.forEach(buff => {
+            if (buff.trigger === eventName) {
+                this.executeEffect(unit, buff.effect, [context.sourceUnit], {}); 
+            }
+        });
+    }
+
+    applySplashDamage(targetUnit, splashAmount, sourceUnit, dmgType) {
+        // 同じ陣営の隣接ユニットを検索してスプラッシュダメージを与える
+        const allies = this.units.filter(u => u.side === targetUnit.side && u.isAlive && u.uid !== targetUnit.uid);
+        if(allies.length > 0) {
+            this.log(`${sourceUnit.name} の攻撃が波及（スプラッシュ）！`);
+            allies.forEach(ally => {
+                ally.takeDamage(splashAmount, sourceUnit, dmgType, { isSplash: true });
+            });
         }
     }
 
-    registerAllSkills() {
+    nextTurn() {
+        if (this.isFinished) return;
+        this.turn++;
+        if (this.turn > this.maxTurn) {
+            this.finishBattle('引き分け（時間切れ）');
+            return;
+        }
+        
+        this.log(`=== ターン ${this.turn} 開始 ===`);
+        
+        // ターン開始処理、バフの持続ターン消費など
         this.units.forEach(u => {
-            const skillIds = [u.uniqueSkillId, ...u.subSkillIds].filter(Boolean);
-            skillIds.forEach(id => {
-                const s = app.skills.find(x => x.id === id);
-                if (!s) return;
-                if (s.trigger === 'passive' || s.trigger === 'engage') {
-                    this.log(` ★ <span class="log-skill">[${s.name}]</span> 発動準備 (戦闘前)`);
-                    this.executeEffects(u, s.effects, { skillName: s.name, skillRange: s.range });
+            if(!u.isAlive) return;
+            // 状態異常の解除などの前処理
+            u.buffs = u.buffs.filter(b => {
+                if (b.duration !== undefined) {
+                    b.duration--;
+                    return b.duration > 0;
                 }
-                if (s.effects) {
-                    s.effects.forEach(eff => {
-                        if (eff.type === 'register_hook') {
-                            this.hooks.push({ 
-                                event: eff.hookEvent, 
-                                chance: eff.hookChance || 100, 
-                                conditions: eff.hookConditions || [],
-                                effects: eff.hookEffects, 
-                                owner: u, 
-                                skillName: s.name 
-                            });
-                        }
-                    });
-                }
+                return true;
             });
         });
-    }
 
-    // フック発動（条件判定を追加）
-    emit(eventName, context = {}) {
-        this.hooks.filter(h => h.event === eventName).forEach(h => {
-            if (!h.owner.isAlive()) return;
-            
-            // 【新規】複雑な発動条件のチェック (例: X回ダメージを与えた時)
-            if (h.conditions.length > 0) {
-                let pass = true;
-                for (let cond of h.conditions) {
-                    if (cond.type === 'dealDamageCountMod') {
-                        if (!context.count || context.count % cond.value !== 0) pass = false;
-                    }
-                    if (cond.type === 'isTargetSelf' && context.actor !== h.owner) pass = false;
-                }
-                if (!pass) return; // 条件不一致ならスキップ
-            }
+        // 行動順（AGI順）
+        const actionQueue = [...this.units].filter(u => u.isAlive).sort((a, b) => b.getStat('agi') - a.getStat('agi'));
 
-            const chance = h.chance || 100;
-            if (Math.random() * 100 < chance) {
-                this.executeEffects(h.owner, h.effects, { ...context, skillName: `${h.skillName} (追加効果)` });
-            } else if(chance < 100) {
-                this.log(`  <span class="log-muted">- [${h.skillName} の追加効果] は確率(${chance}%)により不発</span>`);
-            }
+        actionQueue.forEach(actor => {
+            if (!actor.isAlive) return;
+            this.processUnitAction(actor);
         });
+
+        this.checkWinCondition();
     }
 
-    nextChunk() {
-        if (this.finished) return;
-        if (this.phase === 'opening') {
-            this.log(`<div class="log-turn-start" id="turn-mark-0">=== 戦闘前処理 (Turn 0) ===</div>`);
-            this.emit('onBattleStart');
-            this.phase = 'action_start'; this.turn = 1; this.viewTurn = 1;
-        } else if (this.phase === 'action_start') {
-            this.log(`<div class="log-turn-start" id="turn-mark-${this.turn}">--- Turn ${this.turn} 開始 ---</div>`);
-            document.getElementById('currentTurnLabel').textContent = `Turn ${this.turn}`;
-            this.viewTurn = this.turn;
-            this.turnOrder = this.units.filter(u => u.isAlive()).sort((a,b) => b.getCurrentStat('agi') - a.getCurrentStat('agi'));
-            this.turnIdx = 0; this.phase = 'action';
-            this.nextChunk();
-        } else if (this.phase === 'action') {
-            if (this.turnIdx < this.turnOrder.length) {
-                this.unitAction(this.turnOrder[this.turnIdx++]);
-            } else {
-                this.tickTurnEnd();
-                this.log(`<div class="log-turn-end">--- Turn ${this.turn} 終了 ---</div>`);
-                this.turn++; this.viewTurn = this.turn; this.phase = 'action_start';
-                if (this.turn > 8) this.finish("8ターン経過による引き分け");
-            }
-        }
-        updateStatusDisplay();
-    }
-
-    unitAction(u) {
-        if (!u.isAlive()) return;
-        const atk = u.getCurrentStat('atk'); const def = u.getCurrentStat('def');
-        const int = u.getCurrentStat('int'); const agi = u.getCurrentStat('agi');
-        const wounded = Math.max(0, u.maxHp - u.hp);
-        this.log(`▼ [行動] ${u.side==='left'?'自':'敵'} <b>${u.name}</b> 兵力:${Math.round(u.hp)}(負傷:${Math.round(wounded)}) [A:${atk} D:${def} I:${int} S:${agi}]`);
-
-        // 【新規】行動阻害（眩暈・スタン）のチェック
-        if (u.hasStatus('stun') || u.hasStatus('眩暈')) {
-            this.log(`  <span class="log-damage">- ${u.name} は眩暈(スタン)のため行動できない！</span>`);
-            this.emit('onActionEnd', { actor: u });
+    processUnitAction(actor) {
+        if (actor.states.disoriented) {
+            this.log(`${actor.name} は混乱しており行動できない！`);
             return;
         }
 
-        // アクティブスキル（沈黙チェックを追加）
-        if (!u.hasStatus('silence') && !u.hasStatus('沈黙')) {
-            const actives = [u.uniqueSkillId, ...u.subSkillIds].map(id => app.skills.find(x => x.id === id)).filter(x => x && (x.trigger === 'active' || x.trigger === 'action'));
-            actives.forEach(skill => {
-                this.emit('onSkillAttempt', { actor: u, skill: skill });
-                const chance = skill.chance || 0;
-                if (Math.random() * 100 < chance) {
-                    this.log(` ★ <span class="log-skill">[${skill.name}]</span> 発動！`);
-                    this.executeEffects(u, skill.effects, { skillName: skill.name, skillRange: skill.range });
-                } else {
-                    this.log(`  <span class="log-muted">- [${skill.name}] は確率(${chance}%)により不発</span>`);
-                }
-            });
-        } else {
-            this.log(`  <span class="log-damage">- ${u.name} は沈黙のためスキルを発動できない！</span>`);
+        // 通常攻撃とスキルの実行ロジック
+        // メインスキル
+        if (actor.uniqueSkillId) {
+            const skillData = app.skills.find(s => s.id === actor.uniqueSkillId);
+            if (skillData) this.tryExecuteSkill(actor, skillData);
         }
 
-        // 通常攻撃（武装解除と距離チェックを追加）
-        if (!u.hasStatus('disarm') && !u.hasStatus('武装解除')) {
-            const range = u.getCurrentStat('rng');
-            const target = this.selectTargets(u, 'randomEnemy', 1, range)[0];
-            if (target) {
-                const dmg = this.calcDamage(u, target, 1.0, 'atk');
-                this.applyDamage(u, target, dmg, '通常攻撃');
-                this.emit('onNormalAttack', { actor: u, target: target });
-            } else {
-                this.log(`  <span class="log-muted">- 射程内(距離${range})に通常攻撃の対象がいない！</span>`);
-            }
-        } else {
-            this.log(`  <span class="log-damage">- ${u.name} は武装解除のため通常攻撃できない！</span>`);
-        }
+        // サブスキル
+        actor.subSkillIds.forEach(skillId => {
+            const skillData = app.skills.find(s => s.id === skillId);
+            if (skillData) this.tryExecuteSkill(actor, skillData);
+        });
 
-        this.checkDeaths();
-        this.emit('onActionEnd', { actor: u });
+        // 通常攻撃
+        this.executeBasicAttack(actor);
     }
 
-    executeEffects(caster, effects, context) {
-        if (!effects) return;
-        effects.forEach(eff => {
-            // エフェクトごとに指定された距離、なければスキル距離、なければ無限
-            const effRange = eff.range || context.skillRange || 99;
-            const targets = this.selectTargets(caster, eff.target || 'randomEnemy', eff.count || 1, effRange);
+    // --- 改修: スキル発動のフックと、パイプラインコンテキスト ---
+    tryExecuteSkill(caster, skill) {
+        // 1. スキル発動「試み」のフック（リンカーン「自由の宣言」など）
+        caster.triggerHook('on_skill_try', { skill });
+
+        if (caster.states.silenced && skill.type === 'active') {
+            this.log(`${caster.name} は沈黙しておりアクティブスキルを発動できない！`);
+            return false;
+        }
+
+        const procRate = skill.procRate || 100;
+        const isSuccess = (Math.random() * 100) <= procRate;
+
+        if (isSuccess) {
+            this.log(`【スキル発動】${caster.name} が [${skill.name}] を発動！`);
             
-            targets.forEach(t => {
-                const scaling = caster.getScaledStat(eff.scalingStat || 'atk').multiplier;
-                
-                if (eff.type === 'damage') {
-                    const dmg = this.calcDamage(caster, t, (eff.rate || 1) * scaling, eff.basis || 'atk');
-                    this.applyDamage(caster, t, dmg, context.skillName);
-                
-                } else if (eff.type === 'heal') {
-                    // 【新規】回復禁止チェック
-                    if (t.hasStatus('heal_block') || t.hasStatus('回復禁止')) {
-                        this.log(`  <span class="log-damage">- ${t.name} は回復禁止のため回復できない！</span>`);
-                    } else {
-                        const healBase = (145 * Math.log(Math.max(1, caster.hp)) - 900);
-                        const heal = Math.max(0, Math.round(healBase * (eff.rate || 1) * scaling));
-                        const actual = Math.min(t.maxHp - t.hp, heal);
-                        t.hp += actual;
-                        this.log(`  + ${t.name} が <span class="log-heal">${actual} 回復</span> (${context.skillName}) 残:${Math.round(t.hp)}`);
-                    }
+            // 2. スキル発動「成功」のフック（ダーウィン「進化論」など）
+            caster.triggerHook('on_skill_success', { skill });
+            
+            // パイプライン用コンテキスト（与えた合計ダメージ量を記憶し、吸収回復などに使う）
+            let effectContext = {
+                totalDamageDealt: 0
+            };
 
-                } else if (eff.type === 'buff' || eff.type === 'debuff' || eff.type === 'stackBuff' || eff.type === 'control') {
-                    // 【新規】制御・バフ・デバフの統合付与
-                    const durStr = eff.duration === -1 ? '永続' : `${eff.duration}ターン`;
-                    const buffName = eff.detail || eff.stat || '状態変化';
-                    const isDebuff = eff.type === 'debuff' || eff.value < 0;
-                    const isControl = eff.type === 'control' || ['stun','silence','disarm','heal_block','眩暈','沈黙','武装解除','回復禁止'].includes(eff.stat);
-                    
-                    t.buffs.push({ stat: eff.stat, value: eff.value || 0, duration: eff.duration, name: buffName, isDebuff: isDebuff, isControl: isControl });
-                    const color = (isDebuff || isControl) ? 'log-damage' : 'log-heal';
-                    this.log(`  + ${t.name} は <span class="${color}">[${buffName}]</span> を獲得 (${durStr})`);
+            const targets = this.getTargets(caster, skill, this.units);
 
-                } else if (eff.type === 'dispel') {
-                    // 【新規】浄化（デバフ・制御効果の解除）
-                    const beforeCount = t.buffs.length;
-                    t.buffs = t.buffs.filter(b => {
-                        if (eff.dispelType === 'debuff' && (b.isDebuff || b.value < 0)) return false;
-                        if (eff.dispelType === 'control' && b.isControl) return false;
-                        if (eff.dispelType === 'all' && (b.isDebuff || b.isControl || b.value < 0)) return false;
-                        return true;
-                    });
-                    const removed = beforeCount - t.buffs.length;
-                    if(removed > 0) this.log(`  + ${t.name} のデバフ/制御効果が <span class="log-heal">${removed}個 浄化</span>された！`);
+            if (skill.effects) {
+                skill.effects.forEach(effect => {
+                    this.executeEffect(caster, effect, targets, effectContext);
+                });
+            }
+
+            // 攻撃ごとのカスタムカウンター（風魔小太郎など）
+            if (skill.type === 'damage') { // 暫定
+                caster.customCounters['damage_times'] = (caster.customCounters['damage_times'] || 0) + 1;
+                if (caster.customCounters['damage_times'] >= 4) {
+                    caster.triggerHook('on_counter_reach_4', { type: 'damage_times' });
+                    caster.customCounters['damage_times'] = 0; // リセット
                 }
-            });
+            }
+            return true;
+        }
+        return false;
+    }
+
+    executeBasicAttack(actor) {
+        if (actor.states.exhausted) {
+            this.log(`${actor.name} は疲弊しており通常攻撃できない！`);
+            return;
+        }
+        
+        const targets = this.getTargets(actor, { targetSide: 'enemy', targetCount: 1, targetLogic: 'frontline' }, this.units);
+        if (targets.length > 0) {
+            const target = targets[0];
+            const dmg = actor.getStat('atk') * 1.5; // 基本攻撃計算式（仮）
+            const dealt = target.takeDamage(dmg, actor, 'atk');
+            this.log(`${actor.name} の通常攻撃 -> ${target.name} に ${dealt} のダメージ`);
+            
+            actor.triggerHook('on_basic_attack_success', { target });
+            
+            // 連撃（Double Attack）の処理
+            if (actor.states.doubleAttack && !actor.customCounters['has_double_attacked']) {
+                actor.customCounters['has_double_attacked'] = true;
+                this.log(`${actor.name} の連撃が発生！`);
+                this.executeBasicAttack(actor);
+            } else {
+                actor.customCounters['has_double_attacked'] = false;
+            }
+        }
+    }
+
+    // --- 改修: ターゲティングロジックの拡張（最低INTなどを狙う） ---
+    getTargets(caster, logicDef, allUnits) {
+        let validTargets = allUnits.filter(u => u.isAlive);
+        
+        if (logicDef.targetSide === 'enemy') validTargets = validTargets.filter(u => u.side !== caster.side);
+        if (logicDef.targetSide === 'ally') validTargets = validTargets.filter(u => u.side === caster.side);
+
+        // ソート・抽出ロジック
+        if (logicDef.targetLogic === 'lowest_int') {
+            validTargets.sort((a, b) => a.getStat('int') - b.getStat('int'));
+        } else if (logicDef.targetLogic === 'highest_atk') {
+            validTargets.sort((a, b) => b.getStat('atk') - a.getStat('atk'));
+        } else if (logicDef.targetLogic === 'most_wounded') {
+            validTargets.sort((a, b) => b.wounded - a.wounded);
+        } else if (logicDef.targetLogic === 'frontline') {
+            // 前衛から順に狙うロジック
+            validTargets.sort((a, b) => b.posIdx - a.posIdx);
+        } else {
+            // デフォルトはランダム
+            validTargets = validTargets.sort(() => Math.random() - 0.5);
+        }
+
+        return validTargets.slice(0, logicDef.targetCount || 1);
+    }
+
+    // --- 改修: エフェクト処理（差分ダメージ、動的割合回復、クレンズ、ランダム抽選） ---
+    executeEffect(caster, effect, targets, context) {
+        // 1. 配列からのランダム抽選（ダーウィン「進化論」対応）
+        if (effect.type === 'random_selection') {
+            const numToSelect = effect.selectCount || 1; 
+            const shuffledOptions = [...effect.options].sort(() => Math.random() - 0.5);
+            const selectedEffects = shuffledOptions.slice(0, numToSelect);
+            selectedEffects.forEach(subEffect => this.executeEffect(caster, subEffect, targets, context));
+            return;
+        }
+
+        targets.forEach(target => {
+            // 2. デバフ解除（クレンズ）
+            if (effect.type === 'remove_debuff') {
+                const initialCount = target.buffs.length;
+                target.buffs = target.buffs.filter(b => b.isGood); // isGoodフラグがない悪性バフを削除
+                const removed = initialCount - target.buffs.length;
+                if(removed > 0) this.log(`${target.name} のデバフが ${removed} つ解除された！`);
+                return;
+            }
+
+            // 3. ダメージ処理（ステータス差分ボーナス）
+            if (effect.type === 'damage') {
+                let baseDamage = (caster.getStat(effect.dmgType) * (effect.rate / 100)) - (target.getStat('def') * 0.5);
+                if (baseDamage < 1) baseDamage = 1;
+                
+                // ステータス差分によるボーナス（明智光秀など）
+                if (effect.diffStatBonus) {
+                    const statDiff = Math.max(0, caster.getStat(effect.diffStatBonus) - target.getStat(effect.diffStatBonus));
+                    const bonusMultiplier = 1.0 + (statDiff * 0.01); // 差分1につき1%アップなどのルール
+                    baseDamage *= bonusMultiplier;
+                }
+
+                const dealt = target.takeDamage(baseDamage, caster, effect.dmgType, effect);
+                context.totalDamageDealt += dealt; // コンテキストに記録
+                this.log(`${target.name} に ${dealt} のダメージ！`);
+            }
+
+            // 4. 回復処理（与えたダメージ量に基づく動的数値の参照、捕虜・離間など）
+            if (effect.type === 'heal') {
+                let healAmount = 0;
+                if (effect.basedOnDamage) {
+                    healAmount = context.totalDamageDealt * (effect.rate / 100);
+                } else {
+                    healAmount = (caster.getStat('int') * (effect.rate / 100)); // 基本回復式（仮）
+                }
+                const actualHeal = target.heal(healAmount);
+                this.log(`${target.name} が ${actualHeal} 回復した。`);
+            }
+            
+            // 通常のバフ・デバフ付与
+            if (effect.type === 'add_buff') {
+                target.addBuff({ ...effect.buffData, duration: effect.duration });
+                this.log(`${target.name} に [${effect.buffData.name}] が付与された。`);
+            }
+            
+            // 状態異常の直接付与
+            if (effect.type === 'apply_state') {
+                target.states[effect.stateName] = true;
+                this.log(`${target.name} は [${effect.stateName}] 状態になった！`);
+            }
         });
     }
 
-    // 【新規】ダメージ適用・反撃・条件トリガーの統合
-    applyDamage(attacker, target, dmg, label) {
-        target.hp = Math.max(0, target.hp - dmg);
-        this.log(`  -> ${target.name} に <span class="log-damage">${dmg} ダメージ</span> (${label}) 残:${Math.round(target.hp)}`);
-        
-        // 条件トリガー: カウント
-        if(attacker) {
-            attacker.customState.damageDealtCount += 1;
-            this.emit('onDealDamage', { actor: attacker, target: target, count: attacker.customState.damageDealtCount });
-        }
-        
-        // 条件トリガー: HP低下
-        const hpPct = (target.hp / target.maxHp) * 100;
-        if (!target.customState.hpDrop70 && hpPct <= 70) {
-            target.customState.hpDrop70 = true;
-            this.emit('onHpDropBelow70', { actor: target });
-        }
+    checkWinCondition() {
+        const leftAlive = this.units.filter(u => u.side === 'left' && u.isAlive);
+        const rightAlive = this.units.filter(u => u.side === 'right' && u.isAlive);
 
-        // 被ダメージ時反撃フック
-        this.emit('onDamageReceived', { actor: target, attacker: attacker, damage: dmg });
+        const leftCommanderDead = !this.units.find(u => u.side === 'left' && u.posIdx === 0).isAlive;
+        const rightCommanderDead = !this.units.find(u => u.side === 'right' && u.posIdx === 0).isAlive;
+
+        if (leftCommanderDead && rightCommanderDead) {
+            this.finishBattle('引き分け（両軍指揮官撤退）');
+        } else if (leftCommanderDead || leftAlive.length === 0) {
+            this.finishBattle('右軍（敵軍）の勝利！');
+        } else if (rightCommanderDead || rightAlive.length === 0) {
+            this.finishBattle('左軍（自軍）の勝利！');
+        }
     }
 
-    tickTurnEnd() {
-        this.units.forEach(u => {
-            u.buffs.forEach(b => {
-                if (b.duration === 1) this.log(`  <span class="log-muted">- ${u.name} の [${b.name}] の効果が切れた</span>`);
+    finishBattle(resultStr) {
+        this.isFinished = true;
+        this.log(`【戦闘終了】 ${resultStr}`);
+        
+        // 残存兵力のレポート表示
+        this.log(`--- 最終兵力レポート ---`);
+        ['left', 'right'].forEach(side => {
+            const sideName = side === 'left' ? '自軍' : '敵軍';
+            this.units.filter(u => u.side === side).forEach(u => {
+                this.log(`[${sideName}] ${u.name} (${u.posLabel}): 残存 ${u.hp} / 負傷 ${u.wounded}`);
             });
-            u.buffs = u.buffs.map(b => (b.duration === -1 ? b : { ...b, duration: b.duration - 1 })).filter(b => b.duration === -1 || b.duration > 0);
         });
-    }
 
-    // 【新規】距離(range)制限を適用したターゲット選択
-    selectTargets(caster, type, count, rangeLimit = 99) {
-        let enemies = this.units.filter(u => u.side !== caster.side && u.isAlive() && this.getDistance(caster, u) <= rangeLimit);
-        let allies = this.units.filter(u => u.side === caster.side && u.isAlive() && this.getDistance(caster, u) <= rangeLimit);
-
-        if (type === 'randomEnemy' || type === 'enemyRandom') return enemies.sort(() => 0.5 - Math.random()).slice(0, count);
-        if (type === 'self') return [caster];
-        if (type === 'lowestHpAlly') return allies.sort((a,b) => a.hp - b.hp).slice(0, count);
-        if (type === 'lowestIntEnemy') return enemies.sort((a,b) => a.getCurrentStat('int') - b.getCurrentStat('int')).slice(0, count);
-        return enemies.slice(0, count);
+        if (app.autoInterval) clearInterval(app.autoInterval);
     }
-
-    calcDamage(attacker, target, rate, basis) {
-        const atkVal = attacker.getCurrentStat(basis);
-        const defVal = target.getCurrentStat('def');
-        let dmg = (atkVal - defVal) * 1.5 + (attacker.hp / 100);
-        return Math.max(1, Math.round(dmg * rate * (0.95 + Math.random() * 0.1)));
-    }
-
-    checkDeaths() {
-        const leftCap = this.units.find(u => u.side === 'left' && u.posIdx === 0);
-        const rightCap = this.units.find(u => u.side === 'right' && u.posIdx === 0);
-        if (leftCap && leftCap.hp <= 0) this.finish("敵軍の勝利！");
-        else if (rightCap && rightCap.hp <= 0) this.finish("自軍の勝利！");
-    }
-    finish(msg) { this.finished = true; this.log(`<div class="log-turn-start" id="turn-mark-end">=== ${msg} ===</div>`); }
 }
 
-// --- UI制御 ---
+// --- 初期化・UIイベントバインディング ---
+
+function loadData() {
+    try {
+        app.heroes = JSON.parse(localStorage.getItem(STORE.heroes)) || [];
+        app.skills = JSON.parse(localStorage.getItem(STORE.skills)) || [];
+        app.teams = JSON.parse(localStorage.getItem(STORE.teams)) || {
+            left: [{}, {}, {}],
+            right: [{}, {}, {}]
+        };
+        renderTeams();
+        renderJSONEditors();
+        renderViewers();
+    } catch (e) {
+        console.error("データの読み込みに失敗しました:", e);
+    }
+}
+
+function saveData() {
+    localStorage.setItem(STORE.heroes, JSON.stringify(app.heroes));
+    localStorage.setItem(STORE.skills, JSON.stringify(app.skills));
+    localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
+}
 
 function renderTeams() {
     ['left', 'right'].forEach(side => {
         const container = document.getElementById(`${side}Slots`);
         if(!container) return;
-        container.innerHTML = app.teams[side].map((slot, i) => {
-            const h = app.heroes.find(x => x.id === slot.id);
-            return `
-            <div class="slot">
-                <label>${['指揮官','中軍','前衛'][i]}</label>
-                <div class="select-trigger ${h?'has-hero':''}" onclick="openHeroModal('${side}',${i})">
-                    ${h ? h.name : '英傑を選択'}
-                </div>
-                <input type="number" value="${slot.troops}" onchange="updateSlot('${side}',${i},'troops',this.value)" placeholder="兵力">
-                <div class="input-row">
-                    <select onchange="updateSlot('${side}',${i},'sub1',this.value)">
-                        <option value="">スキル1</option>
-                        ${app.skills.map(s=>`<option value="${s.id}" ${slot.subSkills[0]===s.id?'selected':''}>${s.name}</option>`).join('')}
-                    </select>
-                    <select onchange="updateSlot('${side}',${i},'sub2',this.value)">
-                        <option value="">スキル2</option>
-                        ${app.skills.map(s=>`<option value="${s.id}" ${slot.subSkills[1]===s.id?'selected':''}>${s.name}</option>`).join('')}
-                    </select>
-                </div>
-            </div>`;
+        container.innerHTML = app.teams[side].map((t, i) => {
+            const h = app.heroes.find(x => x.id === t.id);
+            const name = h ? h.name : '未配置';
+            return `<div class="unit-slot" onclick="openHeroModal('${side}', ${i})"><div class="unit-name">${['指揮官','中軍','前衛'][i]}: ${name}</div></div>`;
         }).join('');
     });
 }
 
-function updateSlot(side, idx, field, val) {
-    if(field === 'troops') app.teams[side][idx].troops = Number(val);
-    if(field === 'sub1') app.teams[side][idx].subSkills[0] = val;
-    if(field === 'sub2') app.teams[side][idx].subSkills[1] = val;
-    localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
+function renderJSONEditors() {
+    const hJson = document.getElementById('heroesJson');
+    const sJson = document.getElementById('skillsJson');
+    if (hJson) hJson.value = JSON.stringify(app.heroes, null, 2);
+    if (sJson) sJson.value = JSON.stringify(app.skills, null, 2);
 }
 
-async function loadData(force = false) {
-    const localH = localStorage.getItem(STORE.heroes);
-    const localS = localStorage.getItem(STORE.skills);
-    
-    if (force || !localH || !localS) {
-        try {
-            const [h, s] = await Promise.all([
-                fetch('heroes_all.json').then(r => r.json()),
-                fetch('skills_all.json').then(r => r.json())
-            ]);
-            app.heroes = h || []; app.skills = s || [];
-            localStorage.setItem(STORE.heroes, JSON.stringify(app.heroes));
-            localStorage.setItem(STORE.skills, JSON.stringify(app.skills));
-        } catch(e) { 
-            console.warn("外部JSONの取得に失敗しました。空の状態で起動します。");
-            app.heroes = []; app.skills = [];
-        }
-    } else {
-        try { app.heroes = JSON.parse(localH); } catch(e){ app.heroes = []; }
-        try { app.skills = JSON.parse(localS); } catch(e){ app.skills = []; }
+function renderViewers() {
+    // データ確認用のプルダウンを生成
+    const hSelect = document.getElementById('heroViewerSelect');
+    if (hSelect) {
+        hSelect.innerHTML = '<option value="">-- 英傑を選択 --</option>' + app.heroes.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
     }
-
-    const localT = localStorage.getItem(STORE.teams);
-    if (localT) {
-        try { app.teams = JSON.parse(localT); } catch(e){ app.teams = null; }
+    const sSelect = document.getElementById('skillViewerSelect');
+    if (sSelect) {
+        sSelect.innerHTML = '<option value="">-- スキルを選択 --</option>' + app.skills.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
     }
-    
-    if (!app.teams) {
-        app.teams = {
-            left: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ],
-            right: [ {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]}, {id:"", troops:10000, subSkills:["",""]} ]
-        };
-    }
-    
-    const hJsonEl = document.getElementById('heroesJson');
-    const sJsonEl = document.getElementById('skillsJson');
-    if(hJsonEl) hJsonEl.value = JSON.stringify(app.heroes, null, 2);
-    if(sJsonEl) sJsonEl.value = JSON.stringify(app.skills, null, 2);
-
-    renderTeams(); 
-    initViewers();
-}
-
-function scrollToTurn(turn) {
-    document.getElementById('currentTurnLabel').textContent = `Turn ${turn}`;
-    const mark = document.getElementById(`turn-mark-${turn}`);
-    const area = document.getElementById('logArea');
-    if (mark && area) {
-        area.scrollTo({ 
-            top: mark.offsetTop - area.offsetTop, 
-            behavior: 'smooth' 
-        });
-    }
-}
-
-function setupHandlers() {
-    document.getElementById('btnStart').onclick = () => {
-        try {
-            document.getElementById('logContent').innerHTML = '';
-            app.battle = new BattleEngine(JSON.parse(JSON.stringify(app.teams)));
-            app.battle.nextChunk();
-        } catch(e) { throw new Error("戦闘開始時にエラーが発生しました: " + e.message); }
-    };
-    document.getElementById('btnNext').onclick = () => { if(app.battle) app.battle.nextChunk(); };
-    
-    document.getElementById('btnPrevTurn').onclick = () => {
-        if (app.battle && app.battle.viewTurn > 0) scrollToTurn(--app.battle.viewTurn);
-    };
-    document.getElementById('btnNextTurn').onclick = () => {
-        if (app.battle && app.battle.viewTurn < app.battle.turn && app.battle.viewTurn < 8) scrollToTurn(++app.battle.viewTurn);
-    };
-
-    document.getElementById('btnClearLog').onclick = () => document.getElementById('logContent').innerHTML = '';
-    document.getElementById('btnCopyLog').onclick = () => navigator.clipboard.writeText(document.getElementById('logContent').innerText).then(() => alert("ログをコピーしました"));
-    document.getElementById('btnSyncFile').onclick = () => loadData(true);
-    
-    document.getElementById('btnSaveHeroes').onclick = () => {
-        try {
-            app.heroes = JSON.parse(document.getElementById('heroesJson').value);
-            localStorage.setItem(STORE.heroes, JSON.stringify(app.heroes));
-            renderTeams(); initViewers(); alert("英傑データを保存・反映しました");
-        } catch (e) { alert("【エラー】英傑JSONの形式が間違っています。\n\n詳細: " + e.message); }
-    };
-    document.getElementById('btnSaveSkills').onclick = () => {
-        try {
-            app.skills = JSON.parse(document.getElementById('skillsJson').value);
-            localStorage.setItem(STORE.skills, JSON.stringify(app.skills));
-            renderTeams(); initViewers(); alert("スキルデータを保存・反映しました");
-        } catch (e) { alert("【エラー】スキルJSONの形式が間違っています。\n\n詳細: " + e.message); }
-    };
-    
-    document.getElementById('btnAuto').onclick = () => {
-        if (app.autoInterval) return;
-        app.autoInterval = setInterval(() => {
-            if (!app.battle || app.battle.finished) { clearInterval(app.autoInterval); app.autoInterval = null; return; }
-            app.battle.nextChunk();
-        }, 500);
-    };
-    document.getElementById('btnStop').onclick = () => { clearInterval(app.autoInterval); app.autoInterval = null; };
 }
 
 function addHtmlLog(html) {
-    const content = document.getElementById('logContent');
+    const log = document.getElementById('logContent');
+    if(!log) {
+        // UIが存在しない場合のフォールバック（ログコンテナ自動生成など）
+        const panel = document.querySelector('.log-panel');
+        if(panel) {
+            const logDiv = document.createElement('div');
+            logDiv.id = 'logContent';
+            logDiv.style.flex = '1';
+            logDiv.style.overflowY = 'auto';
+            panel.appendChild(logDiv);
+            logDiv.innerHTML += html;
+        }
+        return;
+    }
     const div = document.createElement('div');
-    div.className = 'log-entry'; div.innerHTML = html;
-    content.appendChild(div);
+    div.innerHTML = html;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
 }
 
-function updateStatusDisplay() {
-    if (!app.battle) return;
-    document.getElementById('turnBadge').textContent = `Turn ${app.battle.turn}`;
-    document.getElementById('stateBadge').textContent = app.battle.finished ? '終了' : '進行中';
+function updateStatusView() {
+    if(!app.battle) return;
+    const badge = document.getElementById('turnBadge');
+    if(badge) badge.textContent = `Turn ${app.battle.turn}`;
 }
 
-window.onload = async () => {
-    await loadData();
-    setupHandlers();
-};
-
+// UIグローバル関数
 window.openHeroModal = (side, idx) => {
     app.currentSelectingSlot = { side, idx };
-    document.getElementById('heroGrid').innerHTML = app.heroes.map(h => `<div class="hero-item" onclick="selectHero('${h.id}')">${h.name}</div>`).join('');
-    document.getElementById('heroModal').style.display = 'block';
+    const grid = document.getElementById('heroGrid');
+    if(grid) grid.innerHTML = app.heroes.map(h => `<div class="hero-item" onclick="selectHero('${h.id}')">${h.name}</div>`).join('');
+    const modal = document.getElementById('heroModal');
+    if(modal) modal.style.display = 'block';
 };
+
 window.selectHero = id => {
     const { side, idx } = app.currentSelectingSlot;
-    app.teams[side][idx].id = id;
-    localStorage.setItem(STORE.teams, JSON.stringify(app.teams));
-    document.getElementById('heroModal').style.display = 'none';
+    app.teams[side][idx] = { id: id, troops: 10000, subSkills: [] };
+    saveData();
     renderTeams();
+    document.getElementById('heroModal').style.display = 'none';
 };
-window.closeHeroModal = () => document.getElementById('heroModal').style.display = 'none';
 
-function initViewers() {
-    const hSel = document.getElementById('heroViewerSelect');
-    const sSel = document.getElementById('skillViewerSelect');
-    if(!hSel || !sSel) return;
-    hSel.innerHTML = '<option value="">英傑選択</option>' + app.heroes.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
-    sSel.innerHTML = '<option value="">スキル選択</option>' + app.skills.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-    hSel.onchange = () => {
-        const h = app.heroes.find(x => x.id === hSel.value);
-        document.getElementById('heroViewerDetail').textContent = h ? `${h.name}\nATK:${h.stats.atk} DEF:${h.stats.def} INT:${h.stats.int} AGI:${h.stats.agi}` : "";
-    };
-    sSel.onchange = () => {
-        const s = app.skills.find(x => x.id === sSel.value);
-        document.getElementById('skillViewerDetail').textContent = s ? `${s.name}\n${s.detail || ""}` : "";
-    };
-}
+window.closeHeroModal = () => {
+    document.getElementById('heroModal').style.display = 'none';
+};
+
+// イベントリスナーの登録
+document.addEventListener('DOMContentLoaded', () => {
+    loadData();
+
+    document.getElementById('btnStart')?.addEventListener('click', () => {
+        document.getElementById('logContent')?.replaceChildren();
+        app.battle = new Battle(app.teams);
+        updateStatusView();
+        app.battle.log('戦闘が初期化されました。');
+    });
+
+    document.getElementById('btnNext')?.addEventListener('click', () => {
+        if(app.battle && !app.battle.isFinished) {
+            app.battle.nextTurn();
+            updateStatusView();
+        }
+    });
+
+    document.getElementById('btnAuto')?.addEventListener('click', () => {
+        if(!app.battle || app.battle.isFinished) return;
+        if(app.autoInterval) clearInterval(app.autoInterval);
+        app.autoInterval = setInterval(() => {
+            if (app.battle.isFinished) {
+                clearInterval(app.autoInterval);
+            } else {
+                app.battle.nextTurn();
+                updateStatusView();
+            }
+        }, 1000);
+    });
+
+    document.getElementById('btnStop')?.addEventListener('click', () => {
+        if(app.autoInterval) {
+            clearInterval(app.autoInterval);
+            app.autoInterval = null;
+        }
+    });
+
+    document.getElementById('btnSaveHeroes')?.addEventListener('click', () => {
+        try {
+            app.heroes = JSON.parse(document.getElementById('heroesJson').value);
+            saveData();
+            renderTeams();
+            renderViewers();
+            alert('英傑データを保存しました。');
+        } catch(e) { alert('JSONフォーマットエラー'); }
+    });
+
+    document.getElementById('btnSaveSkills')?.addEventListener('click', () => {
+        try {
+            app.skills = JSON.parse(document.getElementById('skillsJson').value);
+            saveData();
+            renderViewers();
+            alert('スキルデータを保存しました。');
+        } catch(e) { alert('JSONフォーマットエラー'); }
+    });
+
+    document.getElementById('heroViewerSelect')?.addEventListener('change', (e) => {
+        const h = app.heroes.find(x => x.id === e.target.value);
+        document.getElementById('heroViewerDetail').innerHTML = h ? `<pre>${JSON.stringify(h, null, 2)}</pre>` : '';
+    });
+
+    document.getElementById('skillViewerSelect')?.addEventListener('change', (e) => {
+        const s = app.skills.find(x => x.id === e.target.value);
+        document.getElementById('skillViewerDetail').innerHTML = s ? `<pre>${JSON.stringify(s, null, 2)}</pre>` : '';
+    });
+});
